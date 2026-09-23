@@ -35,6 +35,10 @@ class AppSettings {
     this.shelfSort = 'read',
     this.updateCheckUrl = '',
     this.autoCheckAppUpdate = true,
+    this.imageSearchKey = '',
+    this.imageSearchThreshold = 60,
+    this.imageSearchSegment = true,
+    this.imageSearchUseIqdb = true,
   });
 
   /// JM 下载目录，空表示用默认（公共 JM 目录，不可写时用应用私有目录）
@@ -138,6 +142,20 @@ class AppSettings {
   /// 启动时自动检查有没有新安装包
   final bool autoCheckAppUpdate;
 
+  /// SauceNAO 的 API key，留空走匿名通道
+  ///
+  /// 匿名每 30 秒只能搜 3 次，填了自己的 key 会宽松很多（免费申请）。
+  final String imageSearchKey;
+
+  /// 相似度门槛：低于它算「还没认出来」，会继续切段再搜
+  final int imageSearchThreshold;
+
+  /// 整图认不出时，切上中下三段重搜
+  final bool imageSearchSegment;
+
+  /// 是否同时查 IQDB（免费不限量，但索引偏动画向）
+  final bool imageSearchUseIqdb;
+
   AppSettings copyWith({
     String? downloadDir,
     String? picaDir,
@@ -167,6 +185,10 @@ class AppSettings {
     String? shelfSort,
     String? updateCheckUrl,
     bool? autoCheckAppUpdate,
+    String? imageSearchKey,
+    int? imageSearchThreshold,
+    bool? imageSearchSegment,
+    bool? imageSearchUseIqdb,
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
     picaDir: picaDir ?? this.picaDir,
@@ -197,6 +219,10 @@ class AppSettings {
     shelfSort: shelfSort ?? this.shelfSort,
     updateCheckUrl: updateCheckUrl ?? this.updateCheckUrl,
     autoCheckAppUpdate: autoCheckAppUpdate ?? this.autoCheckAppUpdate,
+    imageSearchKey: imageSearchKey ?? this.imageSearchKey,
+    imageSearchThreshold: imageSearchThreshold ?? this.imageSearchThreshold,
+    imageSearchSegment: imageSearchSegment ?? this.imageSearchSegment,
+    imageSearchUseIqdb: imageSearchUseIqdb ?? this.imageSearchUseIqdb,
   );
 
   Map<String, Object?> toJson() => {
@@ -228,6 +254,10 @@ class AppSettings {
     'shelfSort': shelfSort,
     'updateCheckUrl': updateCheckUrl,
     'autoCheckAppUpdate': autoCheckAppUpdate,
+    'imageSearchKey': imageSearchKey,
+    'imageSearchThreshold': imageSearchThreshold,
+    'imageSearchSegment': imageSearchSegment,
+    'imageSearchUseIqdb': imageSearchUseIqdb,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -263,6 +293,10 @@ class AppSettings {
     shelfSort: json['shelfSort'] as String? ?? 'read',
     updateCheckUrl: json['updateCheckUrl'] as String? ?? '',
     autoCheckAppUpdate: json['autoCheckAppUpdate'] as bool? ?? true,
+    imageSearchKey: json['imageSearchKey'] as String? ?? '',
+    imageSearchThreshold: json['imageSearchThreshold'] as int? ?? 60,
+    imageSearchSegment: json['imageSearchSegment'] as bool? ?? true,
+    imageSearchUseIqdb: json['imageSearchUseIqdb'] as bool? ?? true,
   );
 }
 

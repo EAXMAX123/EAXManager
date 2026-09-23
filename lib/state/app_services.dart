@@ -28,6 +28,7 @@ import '../source/comic_source.dart';
 import '../source/eh/eh_source.dart';
 import '../source/pica/pica_source.dart';
 import '../source/pixiv/pixiv_client.dart';
+import '../source/image_search/image_search_service.dart';
 import '../source/pixiv/pixiv_source.dart';
 import '../source/source_registry.dart';
 import 'download_manager.dart';
@@ -63,6 +64,7 @@ class AppServices {
   late SourceRegistry sources;
   late DownloadManager downloads;
   late SubscriptionService subscriptions;
+  late ImageSearchService imageSearch;
 
   /// JM 登录会话（持久化 cookie），重建客户端时复用
   late final CookieJar cookieJar;
@@ -115,6 +117,11 @@ class AppServices {
       apiBases: PixivConst.parseList(settings.value.pixivApiBase),
       imageProxies: PixivConst.parseList(settings.value.pixivImageProxy),
       imageQuality: settings.value.pixivQuality,
+    );
+    imageSearch = ImageSearchService(
+      transport: _transportOf(settings.value),
+      sauceNaoKey: settings.value.imageSearchKey,
+      enableIqdb: settings.value.imageSearchUseIqdb,
     );
     sources = SourceRegistry()
       ..register(JmSource(client))
@@ -245,6 +252,12 @@ class AppServices {
       apiBases: PixivConst.parseList(s.pixivApiBase),
       imageProxies: PixivConst.parseList(s.pixivImageProxy),
       imageQuality: s.pixivQuality,
+    );
+
+    imageSearch.transport = transport;
+    imageSearch.configure(
+      sauceNaoKey: s.imageSearchKey,
+      enableIqdb: s.imageSearchUseIqdb,
     );
 
     downloads.updateSettings(s);
