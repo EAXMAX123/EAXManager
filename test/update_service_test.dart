@@ -22,13 +22,45 @@ void main() {
       expect(UpdateService.compareVersion('1.1', '1.1.0'), 0);
     });
 
-    test('前面带 v、后面带后缀都不影响', () {
+    test('前面带 v 不影响', () {
       expect(UpdateService.compareVersion('v1.1.5', '1.1.4'), greaterThan(0));
-      expect(UpdateService.compareVersion('1.1.5-beta', '1.1.5'), 0);
     });
 
     test('相同版本返回 0', () {
       expect(UpdateService.compareVersion(AppInfo.version, AppInfo.version), 0);
+    });
+
+    test('beta 版排在同号的正式版前面', () {
+      expect(
+        UpdateService.compareVersion('1.3.0', '1.3.0-beta'),
+        greaterThan(0),
+      );
+      expect(UpdateService.compareVersion('1.3.0-beta', '1.3.0'), lessThan(0));
+    });
+
+    test('beta 后缀里的数字不算进版本段', () {
+      // 这里踩过坑：`1.3.0-beta2` 曾被拆成 1.3.0.2，反而显得比 1.3.0 新，
+      // 结果 beta 用户一直等不到正式版的更新提示。
+      expect(
+        UpdateService.compareVersion('1.3.0', '1.3.0-beta2'),
+        greaterThan(0),
+      );
+      expect(
+        UpdateService.compareVersion('1.3.0', '1.3.0beta2'),
+        greaterThan(0),
+      );
+      expect(
+        UpdateService.compareVersion('1.3.0-beta2', '1.3.0-beta'),
+        greaterThan(0),
+      );
+    });
+
+    test('构建号不参与比较', () {
+      expect(UpdateService.compareVersion('1.3.0+18', '1.3.0+17'), 0);
+      expect(
+        UpdateService.compareVersion('1.3.1+1', '1.3.0+99'),
+        greaterThan(0),
+      );
     });
   });
 

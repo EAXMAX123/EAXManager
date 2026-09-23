@@ -286,20 +286,51 @@ class UpdateService {
   /// 按数字段比，所以 1.1.10 比 1.1.9 新（按字符串比会反过来）。
   /// 前面可以带 v，后面带别的后缀也不影响。
   static int compareVersion(String a, String b) {
-    final left = _parts(a);
-    final right = _parts(b);
-    final length = left.length > right.length ? left.length : right.length;
+    final left = _split(a);
+    final right = _split(b);
+
+    final leftParts = _parts(left.$1);
+    final rightParts = _parts(right.$1);
+    final length = leftParts.length > rightParts.length
+        ? leftParts.length
+        : rightParts.length;
     for (var i = 0; i < length; i++) {
-      final x = i < left.length ? left[i] : 0;
-      final y = i < right.length ? right[i] : 0;
+      final x = i < leftParts.length ? leftParts[i] : 0;
+      final y = i < rightParts.length ? rightParts[i] : 0;
       if (x != y) return x > y ? 1 : -1;
     }
-    return 0;
+
+    return _compareLabel(left.$2, right.$2);
   }
 
-  static List<int> _parts(String raw) => raw
-      .trim()
-      .replaceFirst(RegExp(r'^[vV]'), '')
+  /// 数字段完全一样时比预发布后缀
+  ///
+  /// 没后缀的是正式版，排在带后缀的前面：`1.3.0` 比 `1.3.0-beta` 新。
+  /// 这条规则是给 beta 用户兜底的——他们的版本号是 `1.3.0-beta`，
+  /// 数字段和正式版一模一样，只看数字的话永远等不到更新。
+  static int _compareLabel(String a, String b) {
+    if (a == b) return 0;
+    if (a.isEmpty) return 1;
+    if (b.isEmpty) return -1;
+    return a.toLowerCase().compareTo(b.toLowerCase()) < 0 ? -1 : 1;
+  }
+
+  /// 拆成「数字核心」和「后缀」两段
+  ///
+  /// `1.3.0-beta2` -> 核心 `1.3.0`、后缀 `beta2`
+  /// `v1.3.0` -> 核心 `1.3.0`、后缀 ``
+  /// 后缀里的数字不算进核心，否则 `1.3.0-beta2` 会被当成 `1.3.0.2`，
+  /// 反而显得比 `1.3.0` 新。
+  static (String, String) _split(String raw) {
+    var text = raw.trim().replaceFirst(RegExp(r'^[vV]'), '');
+    // `+17` 这类构建号不参与比较
+    text = text.split('+').first;
+    final match = RegExp(r'^[0-9]+(?:\.[0-9]+)*').firstMatch(text);
+    if (match == null) return ('', text);
+    return (match[0]!, text.substring(match[0]!.length));
+  }
+
+  static List<int> _parts(String core) => core
       .split(RegExp(r'[^0-9]+'))
       .where((e) => e.isNotEmpty)
       .map((e) => int.tryParse(e) ?? 0)

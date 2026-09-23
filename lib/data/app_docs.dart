@@ -34,6 +34,19 @@ class Changelog {
 
   static const List<ChangeEntry> entries = [
     ChangeEntry(
+      version: '1.3.1',
+      date: '2026-09-23',
+      summary: '修掉「装了 beta 版就再也收不到更新」的问题',
+      fixes: [
+        '装了 1.3.0 beta 的人一直没收到正式版的更新提示。原因是软件比版本号时'
+            '把 `-beta` 这段后缀整个丢掉了，`1.3.0-beta` 和 `1.3.0` 被当成'
+            '同一个版本，所以判断成「已经是最新」。现在正式版会正确排在'
+            '同号的 beta 前面，装了 beta 的也能正常收到更新。',
+        '顺带修了 beta2 这种带数字后缀的版本号：`1.3.0-beta2` 以前会被'
+            '当成 `1.3.0.2`，反而显得比 `1.3.0` 新。',
+      ],
+    ),
+    ChangeEntry(
       version: '1.3.0',
       date: '2026-09-23',
       summary: '多了一个「识图」页：从相册选一张图，反查它出自哪一本',

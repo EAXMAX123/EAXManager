@@ -15,8 +15,8 @@ class AppInfo {
   /// 服务器直接不收，表现出来就是「连不上」。
   static const String asciiName = 'EAXManager';
 
-  static const String version = '1.3.0';
-  static const int buildNumber = 17;
+  static const String version = '1.3.1';
+  static const int buildNumber = 18;
 
   /// 更新信息地址：放「最新版本号是多少」的那个小文件
   ///
