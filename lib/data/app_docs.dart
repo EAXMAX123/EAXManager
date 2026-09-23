@@ -34,7 +34,7 @@ class Changelog {
 
   static const List<ChangeEntry> entries = [
     ChangeEntry(
-      version: '1.3.0-beta',
+      version: '1.3.0',
       date: '2026-09-23',
       summary: '多了一个「识图」页：从相册选一张图，反查它出自哪一本',
       features: [
