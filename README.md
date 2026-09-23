@@ -6,13 +6,20 @@
 
 > 本项目是纯客户端，不提供任何内容，也不托管任何图片。
 
+## 下载
+
+最新安装包在更新仓库：[EAXMAX123/eam-update](https://github.com/EAXMAX123/eam-update/releases/latest)
+
+装好之后软件自己会检查新版本，联网时会提示，不用每次回来手动找。
+仓库里也保留每一个历史版本，出问题可以回滚到旧版。
+
 ## 版本
 
 当前版本：**v1.3.0**（`buildNumber` = 17）
 
 版本号要改三处，保持一致：
 
-1. `pubspec.yaml` → `version: 1.2.x+N`（N 每次 +1）
+1. `pubspec.yaml` → `version: <版本>+N`（N 每次 +1）
 2. `lib/app_info.dart` → `version` / `buildNumber`
 3. `android/app/src/main/AndroidManifest.xml` → `android:label`
 
