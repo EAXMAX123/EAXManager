@@ -16,7 +16,7 @@ class AppInfo {
   static const String asciiName = 'EAXManager';
 
   static const String version = '1.3.0-beta';
-  static const int buildNumber = 15;
+  static const int buildNumber = 16;
 
   /// 更新信息地址：放「最新版本号是多少」的那个小文件
   ///

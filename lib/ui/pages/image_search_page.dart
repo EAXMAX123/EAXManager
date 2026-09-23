@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../services/platform_service.dart';
+import '../../source/image_search/image_prep.dart';
 import '../../source/image_search/image_search_models.dart';
 import '../../state/app_services.dart';
 import 'keyword_search_page.dart';
@@ -30,6 +31,7 @@ class _ImageSearchPageState extends State<ImageSearchPage>
   String _pickedName = '';
 
   bool _busy = false;
+  bool _lensBusy = false;
   String _stage = '';
   String? _fatal;
   ImageSearchReport? _report;
@@ -114,6 +116,49 @@ class _ImageSearchPageState extends State<ImageSearchPage>
         _busy = false;
         _stage = '';
         _fatal = '识图失败：$e';
+      });
+    }
+  }
+
+  /// 用 Google Lens 搜：上传交给软件做，结果页交给浏览器打开
+  ///
+  /// Lens 的结果页是纯 JS 的，Dart 解析不出来，所以这里不做解析，
+  /// 只把「手动在 Google 页面上选文件」这一步省掉。
+  Future<void> _runLens() async {
+    final bytes = _picked;
+    if (bytes == null) {
+      setState(() => _fatal = '先选一张图');
+      return;
+    }
+
+    setState(() {
+      _lensBusy = true;
+      _fatal = null;
+    });
+
+    try {
+      final prepared = ImagePrep.prepare(bytes);
+      if (prepared == null) {
+        setState(() {
+          _lensBusy = false;
+          _fatal = '这张图解不开';
+        });
+        return;
+      }
+
+      final url = await AppServices.I.imageSearch.lensUrl(prepared.bytes);
+      if (!mounted) return;
+      setState(() => _lensBusy = false);
+
+      final opened = await PlatformService.openUrl(url);
+      if (!opened && mounted) {
+        setState(() => _fatal = '打不开浏览器，结果地址是：$url');
+      }
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _lensBusy = false;
+        _fatal = 'Google Lens 用不了：$e';
       });
     }
   }
@@ -250,6 +295,23 @@ class _ImageSearchPageState extends State<ImageSearchPage>
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: (_picked == null || _busy || _lensBusy)
+                    ? null
+                    : _runLens,
+                icon: _lensBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.travel_explore, size: 18),
+                label: const Text('用 Google Lens 搜（需梯子）'),
+              ),
             ),
           ],
         ),

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import '../../net/net_transport.dart';
 import '../comic_source.dart';
+import 'google_lens_client.dart';
 import 'image_prep.dart';
 import 'image_search_models.dart';
 import 'iqdb_client.dart';
@@ -18,22 +19,44 @@ typedef ImageSearchProgress = void Function(String stage);
 
 class ImageSearchService {
   ImageSearchService({
-    required this.transport,
+    required NetTransport transport,
     String sauceNaoKey = '',
     this.enableSauceNao = true,
     this.enableIqdb = true,
-  }) : _sauceNao = SauceNaoClient(transport: transport, apiKey: sauceNaoKey);
+  }) : _transport = transport,
+       _key = sauceNaoKey,
+       _sauceNao = SauceNaoClient(transport: transport, apiKey: sauceNaoKey);
 
-  NetTransport transport;
+  NetTransport _transport;
+
+  String _key;
 
   bool enableSauceNao;
   bool enableIqdb;
 
-  final SauceNaoClient _sauceNao;
+  SauceNaoClient _sauceNao;
 
   IqdbClient? _iqdb;
 
-  IqdbClient get iqdb => _iqdb ??= IqdbClient(transport: transport);
+  GoogleLensClient? _lens;
+
+  NetTransport get transport => _transport;
+
+  /// 换代理 / 换线路之后要重建客户端
+  ///
+  /// 这几个客户端都在构造时就把 transport 存下来了，只改字段是没用的 ——
+  /// 那样用户改完代理，识图仍然走旧配置，而且不会有任何报错。
+  set transport(NetTransport value) {
+    if (value.signature == _transport.signature) return;
+    _transport = value;
+    _sauceNao = SauceNaoClient(transport: value, apiKey: _key);
+    _iqdb = null;
+    _lens = null;
+  }
+
+  IqdbClient get iqdb => _iqdb ??= IqdbClient(transport: _transport);
+
+  GoogleLensClient get lens => _lens ??= GoogleLensClient(transport: _transport);
 
   /// 两次 SauceNAO 请求之间至少隔这么久
   ///
@@ -46,10 +69,19 @@ class ImageSearchService {
 
   /// 改了 key 之后重新配置
   void configure({String? sauceNaoKey, bool? enableSauceNao, bool? enableIqdb}) {
-    if (sauceNaoKey != null) _sauceNao.apiKey = sauceNaoKey;
+    if (sauceNaoKey != null) {
+      _key = sauceNaoKey;
+      _sauceNao.apiKey = sauceNaoKey;
+    }
     if (enableSauceNao != null) this.enableSauceNao = enableSauceNao;
     if (enableIqdb != null) this.enableIqdb = enableIqdb;
   }
+
+  /// 把图片传给 Google Lens，返回结果页地址
+  ///
+  /// 只有上传这一步在这里做，结果的解析在浏览器里进行（见 GoogleLensClient 的说明）。
+  Future<String> lensUrl(Uint8List jpeg, {String filename = 'image.jpg'}) =>
+      lens.resultUrl(jpeg, filename: filename);
 
   /// 识图主流程
   ///

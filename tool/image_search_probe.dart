@@ -10,6 +10,7 @@ library;
 import 'dart:io';
 
 import 'package:jm_reader/net/net_transport.dart';
+import 'package:jm_reader/source/image_search/google_lens_client.dart';
 import 'package:jm_reader/source/image_search/image_prep.dart';
 import 'package:jm_reader/source/image_search/image_search_service.dart';
 
@@ -39,7 +40,30 @@ Future<void> main(List<String> args) async {
   print('分段：${regions.isEmpty ? '不切' : regions.map((e) => e.label).join(' / ')}');
   print('');
 
-  final service = ImageSearchService(transport: const NetTransport());
+  final proxyArg = args.firstWhere(
+    (e) => e.startsWith('--proxy='),
+    orElse: () => '',
+  );
+  final transport = NetTransport(
+    proxyUrl: proxyArg.isEmpty ? '' : proxyArg.substring('--proxy='.length),
+  );
+  print('代理：${proxyArg.isEmpty ? '（无）' : proxyArg}');
+
+  if (args.contains('--lens')) {
+    print('');
+    print('--- Google Lens 上传 ---');
+    try {
+      final url = await GoogleLensClient(transport: transport).resultUrl(
+        prepared.bytes,
+      );
+      print('结果页：$url');
+    } on Exception catch (e) {
+      print('失败：$e');
+    }
+    return;
+  }
+
+  final service = ImageSearchService(transport: transport);
   final started = DateTime.now();
   final report = await service.search(
     bytes,

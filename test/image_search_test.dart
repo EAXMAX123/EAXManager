@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:jm_reader/source/image_search/image_prep.dart';
 import 'package:jm_reader/source/image_search/image_search_models.dart';
+import 'package:jm_reader/source/image_search/google_lens_client.dart';
 import 'package:jm_reader/source/image_search/image_search_service.dart';
 import 'package:jm_reader/source/image_search/iqdb_client.dart';
 import 'package:jm_reader/source/image_search/saucenao_client.dart';
@@ -254,6 +255,44 @@ void main() {
 
     test('没有匹配时是空列表', () {
       expect(IqdbClient.parseResults('<div>No relevant matches</div>'), isEmpty);
+    });
+  });
+
+  group('Google Lens 结果地址', () {
+    test('正常的 Location 原样返回', () {
+      expect(
+        GoogleLensClient.resultUrlFrom(
+          'https://www.google.com/search?vsrid=abc&udm=26',
+        ),
+        'https://www.google.com/search?vsrid=abc&udm=26',
+      );
+    });
+
+    test('协议相对的地址补上 https', () {
+      expect(
+        GoogleLensClient.resultUrlFrom('//www.google.com/search?vsrid=abc'),
+        'https://www.google.com/search?vsrid=abc',
+      );
+    });
+
+    test('只有路径的补上域名', () {
+      expect(
+        GoogleLensClient.resultUrlFrom('/search?vsrid=abc'),
+        'https://www.google.com/search?vsrid=abc',
+      );
+    });
+
+    test('空值返回 null，别把空地址丢给浏览器', () {
+      expect(GoogleLensClient.resultUrlFrom(null), isNull);
+      expect(GoogleLensClient.resultUrlFrom(''), isNull);
+      expect(GoogleLensClient.resultUrlFrom('   '), isNull);
+    });
+
+    test('不是 Google 的地址一律拒绝', () {
+      expect(
+        GoogleLensClient.resultUrlFrom('https://example.com/search?vsrid=abc'),
+        isNull,
+      );
     });
   });
 
