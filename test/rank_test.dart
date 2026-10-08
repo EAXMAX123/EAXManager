@@ -108,7 +108,10 @@ void main() {
   group('档位数据结构', () {
     test('label 都是给用户看的中文，key 都是给接口的英文', () {
       final source = JmSource(JmClient());
-      for (final option in [...source.rankTimes, ...source.rankCategories('week')]) {
+      for (final option in [
+        ...source.rankTimes,
+        ...source.rankCategories('week'),
+      ]) {
         expect(option.key, isNotEmpty);
         expect(option.label, isNotEmpty);
         expect(option.key, isNot(contains(' ')));

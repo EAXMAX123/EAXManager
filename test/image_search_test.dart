@@ -73,11 +73,14 @@ img.Image _framed({
   int contentRgb = 0x3366CC,
 }) {
   final image = img.Image(width: size, height: size);
-  img.fill(image, color: img.ColorRgb8(
-    (borderRgb >> 16) & 0xFF,
-    (borderRgb >> 8) & 0xFF,
-    borderRgb & 0xFF,
-  ));
+  img.fill(
+    image,
+    color: img.ColorRgb8(
+      (borderRgb >> 16) & 0xFF,
+      (borderRgb >> 8) & 0xFF,
+      borderRgb & 0xFF,
+    ),
+  );
   img.fillRect(
     image,
     x1: inset,
@@ -108,7 +111,13 @@ void main() {
       final source = img.Image(width: 400, height: 400);
       for (var y = 0; y < 400; y++) {
         for (var x = 0; x < 400; x++) {
-          source.setPixelRgb(x, y, (x * 7) % 256, (y * 11) % 256, (x + y) % 256);
+          source.setPixelRgb(
+            x,
+            y,
+            (x * 7) % 256,
+            (y * 11) % 256,
+            (x + y) % 256,
+          );
         }
       }
       final cropped = ImagePrep.autocrop(source);
@@ -212,9 +221,8 @@ void main() {
     });
 
     test('pixiv 结果的标题和作者取对', () {
-      final pixiv = SauceNaoClient.parseResults(
-        _saucenaoHtml,
-      ).firstWhere((e) => e.index == 'Pixiv');
+      final pixiv = SauceNaoClient.parseResults(_saucenaoHtml)
+          .firstWhere((e) => e.index == 'Pixiv');
 
       expect(pixiv.title, 'テスト本');
       expect(pixiv.author, 'テスト絵師');
@@ -222,15 +230,17 @@ void main() {
     });
 
     test('相对路径的缩略图补成绝对地址', () {
-      final pixiv = SauceNaoClient.parseResults(
-        _saucenaoHtml,
-      ).firstWhere((e) => e.index == 'Pixiv');
+      final pixiv = SauceNaoClient.parseResults(_saucenaoHtml)
+          .firstWhere((e) => e.index == 'Pixiv');
 
       expect(pixiv.thumbnailUrl, 'https://saucenao.com/res/pixiv/1/2/3.jpg');
     });
 
     test('空页面解析出空列表', () {
-      expect(SauceNaoClient.parseResults('<html><body></body></html>'), isEmpty);
+      expect(
+        SauceNaoClient.parseResults('<html><body></body></html>'),
+        isEmpty,
+      );
     });
   });
 
@@ -242,8 +252,14 @@ void main() {
       expect(matches.first.engine, 'IQDB');
       expect(matches.first.similarity, 96);
       expect(matches.first.index, 'Danbooru');
-      expect(matches.first.sourceUrl, 'https://danbooru.donmai.us/posts/12213877');
-      expect(matches.first.thumbnailUrl, 'https://iqdb.org/danbooru/e/5/1/e511.jpg');
+      expect(
+        matches.first.sourceUrl,
+        'https://danbooru.donmai.us/posts/12213877',
+      );
+      expect(
+        matches.first.thumbnailUrl,
+        'https://iqdb.org/danbooru/e/5/1/e511.jpg',
+      );
     });
 
     test('第二条按相似度排在后面', () {
@@ -254,7 +270,10 @@ void main() {
     });
 
     test('没有匹配时是空列表', () {
-      expect(IqdbClient.parseResults('<div>No relevant matches</div>'), isEmpty);
+      expect(
+        IqdbClient.parseResults('<div>No relevant matches</div>'),
+        isEmpty,
+      );
     });
   });
 

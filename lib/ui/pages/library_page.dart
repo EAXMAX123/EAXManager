@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -9,9 +10,11 @@ import '../../data/app_database.dart';
 import '../../jm/jm_storage.dart';
 import '../../services/local_library.dart';
 import '../../services/shelf_sizes.dart';
+import '../../services/shelf_filter.dart';
 import '../../state/app_services.dart';
 import '../widgets/album_cover.dart';
 import '../widgets/source_badge.dart';
+import '../widgets/retained_tabs.dart';
 import 'detail_page.dart';
 import 'reader_page.dart';
 import 'subscriptions_view.dart';
@@ -26,6 +29,10 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 2, vsync: this);
+  final _search = TextEditingController();
+  bool _active = true;
+  String _downloadSignature = '';
+  Timer? _downloadRefresh;
 
   /// 当前选中的分类；null 表示「全部」
   int? _categoryId;
@@ -68,7 +75,7 @@ class _LibraryPageState extends State<LibraryPage>
   void initState() {
     super.initState();
     AppServices.I.library.addListener(_refresh);
-    AppServices.I.downloads.addListener(_refresh);
+    AppServices.I.downloads.addListener(_onDownloadsChanged);
     _loadCategories();
     AppServices.I.reloadLibrary();
     if (_needsSizes) _ensureSizes();
@@ -76,17 +83,19 @@ class _LibraryPageState extends State<LibraryPage>
 
   @override
   void dispose() {
+    _search.dispose();
+    _downloadRefresh?.cancel();
     _tabs.dispose();
     AppServices.I.library.removeListener(_refresh);
-    AppServices.I.downloads.removeListener(_refresh);
+    AppServices.I.downloads.removeListener(_onDownloadsChanged);
     super.dispose();
   }
 
   void _refresh() {
-    if (!mounted) return;
+    if (!mounted || !_active) return;
     setState(() {});
     // 下载目录换了，之前数出来的占用空间就不作数了
-    if (_needsSizes && _sizesRoot != AppServices.I.rootDir.value) {
+    if (_needsSizes && _sizesRoot != _sizeRoots().join('|')) {
       _ensureSizes();
     }
     // 归属关系可能刚在详情页改过，最多每秒重读一次分类
@@ -95,6 +104,34 @@ class _LibraryPageState extends State<LibraryPage>
       _categoriesAt = now;
       _loadCategories();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = PageActivity.of(context);
+    final becameActive = active && !_active;
+    _active = active;
+    if (becameActive) {
+      AppServices.I.reloadLibrary();
+      _loadCategories();
+      if (_needsSizes) _ensureSizes(force: true);
+    }
+  }
+
+  void _onDownloadsChanged() {
+    if (!_active || !mounted) return;
+    final signature = AppServices.I.downloads.tasks
+        .map((task) => '${task.id}:${task.status.name}')
+        .join('|');
+    if (signature == _downloadSignature) return;
+    _downloadSignature = signature;
+    _sizesRoot = '';
+    _downloadRefresh ??= Timer(const Duration(milliseconds: 600), () async {
+      _downloadRefresh = null;
+      if (!_active || !mounted) return;
+      await AppServices.I.reloadLibrary();
+    });
   }
 
   /// 重新读取分类与归属关系
@@ -155,13 +192,21 @@ class _LibraryPageState extends State<LibraryPage>
     if (!force && _sizesRoot == signature && _sizes.isNotEmpty) return;
 
     setState(() => _sizesLoading = true);
-    final sizes = await ShelfSizes.scan(roots);
-    if (!mounted) return;
-    setState(() {
-      _sizes = sizes;
-      _sizesRoot = signature;
-      _sizesLoading = false;
-    });
+    try {
+      final sizes = await ShelfSizes.scan(roots);
+      if (!mounted) return;
+      setState(() {
+        _sizes = sizes;
+        _sizesRoot = signature;
+      });
+    } on Exception catch (error) {
+      if (mounted && _active) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('暂时无法统计存储大小：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _sizesLoading = false);
+    }
   }
 
   /// 要统计的根目录：当前下载目录 + 每本书当初落盘的目录
@@ -172,7 +217,11 @@ class _LibraryPageState extends State<LibraryPage>
     for (final item in AppServices.I.library.value) {
       if (item.rootPath.isNotEmpty) roots.add(item.rootPath);
     }
-    return roots;
+    return roots
+        .where((root) => root.isNotEmpty && !root.startsWith('('))
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   Future<void> _pickSort() async {
@@ -248,6 +297,10 @@ class _LibraryPageState extends State<LibraryPage>
       );
     } finally {
       _opening = false;
+      if (mounted) {
+        await AppServices.I.reloadLibrary();
+        await _loadCategories();
+      }
     }
   }
 
@@ -447,7 +500,11 @@ class _LibraryPageState extends State<LibraryPage>
           ),
           const SizedBox(height: 12),
           Text(
-            shelfEmpty ? '书架还是空的\n去「发现」页搜索并下载吧' : '这个分类下还没有本子\n在详情页点「加入书架」可以归类',
+            _search.text.trim().isNotEmpty
+                ? '没有匹配的本地作品\n试试名称、作者或作品 ID'
+                : shelfEmpty
+                ? '书架还是空的\n去「发现」页搜索并下载吧'
+                : '这个分类下还没有本子\n在详情页点「加入书架」可以归类',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.outline),
           ),
@@ -459,15 +516,38 @@ class _LibraryPageState extends State<LibraryPage>
   Widget _buildShelf() {
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+          child: TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: '搜索书架 · 名称 / 作者 / ID',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: '清空搜索',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(_search.clear),
+                    ),
+            ),
+          ),
+        ),
         _categoryBar(),
         if (_sizesLoading) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: ValueListenableBuilder<List<BookshelfItem>>(
-            valueListenable: AppServices.I.library,
-            builder: (context, items, _) {
-              final filtered = _filterByCategory(items);
+          child: Builder(
+            builder: (context) {
+              final items = AppServices.I.library.value;
+              final filtered = _filterByCategory(items)
+                  .where((item) => ShelfFilter.matches(item, _search.text))
+                  .toList();
               if (filtered.isEmpty) return _emptyState(items.isEmpty);
               final sorted = _sortItems(filtered);
+              final resume = _search.text.trim().isEmpty && _categoryId == null
+                  ? ShelfFilter.latestRead(items)
+                  : null;
 
               return RefreshIndicator(
                 onRefresh: () async {
@@ -476,29 +556,63 @@ class _LibraryPageState extends State<LibraryPage>
                   await _loadCategories();
                 },
                 child: ListView.builder(
+                  key: const PageStorageKey('local-bookshelf'),
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.only(bottom: 24),
-                  itemCount: sorted.length,
+                  itemCount: sorted.length + (resume == null ? 0 : 1),
                   itemBuilder: (context, index) {
-                    final item = sorted[index];
-                    return _LibraryTile(
-                      item: item,
-                      coverUrl: item.coverUrl,
-                      headers:
-                          AppServices.I.sources.of(item.source)?.imageHeaders ??
-                          const {},
-                      localCover: _localCover(item),
-                      sizeText: _needsSizes
-                          ? ShelfSizes.formatBytes(_sizeOf(item))
-                          : '',
-                      onTap: () {
-                        _openItem(item);
-                      },
-                      onLongPress: () => _remove(item),
-                      onOpenDetail: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              DetailPage(sid: item.sid, title: item.title),
+                    if (resume != null && index == 0) {
+                      return Card(
+                        color: Theme.of(context).colorScheme.secondaryContainer,
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 8,
+                          ),
+                          leading: const Icon(
+                            Icons.play_circle_outline,
+                            size: 32,
+                          ),
+                          title: const Text('继续阅读'),
+                          subtitle: Text(
+                            '${resume.title}\n第 ${resume.lastChapter} 话 · 第 ${resume.lastPage} 页',
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _openItem(resume),
                         ),
+                      );
+                    }
+                    final item = sorted[index - (resume == null ? 0 : 1)];
+                    return Card(
+                      child: _LibraryTile(
+                        item: item,
+                        coverUrl: item.coverUrl,
+                        headers:
+                            AppServices.I.sources
+                                .of(item.source)
+                                ?.imageHeaders ??
+                            const {},
+                        localCover: _localCover(item),
+                        sizeText: _needsSizes
+                            ? ShelfSizes.formatBytes(_sizeOf(item))
+                            : '',
+                        onTap: () {
+                          _openItem(item);
+                        },
+                        onLongPress: () => _remove(item),
+                        onOpenDetail: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  DetailPage(sid: item.sid, title: item.title),
+                            ),
+                          );
+                          if (!mounted) return;
+                          await AppServices.I.reloadLibrary();
+                          await _loadCategories();
+                        },
                       ),
                     );
                   },

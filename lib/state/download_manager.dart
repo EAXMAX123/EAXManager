@@ -268,7 +268,8 @@ class DownloadManager extends ChangeNotifier {
       final downloader = ChapterDownloader(
         dio: source.dio,
         // 源可以自己压并发（Pixiv 走公共反代，压到 3 才不会把反代惹毛）
-        maxConcurrentImages: source.imageConcurrencyOverride ?? _imageConcurrency,
+        maxConcurrentImages:
+            source.imageConcurrencyOverride ?? _imageConcurrency,
         jpegQuality: settings.jpegQuality,
         hideFromGallery: settings.hideFromGallery,
       );

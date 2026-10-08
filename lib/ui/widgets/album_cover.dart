@@ -17,7 +17,7 @@ class AlbumCover extends StatelessWidget {
     this.httpHeaders,
     this.width = 72,
     this.height = 96,
-    this.radius = 8,
+    this.radius = 12,
     this.show = true,
   });
 
@@ -40,12 +40,13 @@ class AlbumCover extends StatelessWidget {
 
     Widget child;
 
-    if (localPath.isNotEmpty && File(localPath).existsSync()) {
+    if (localPath.isNotEmpty) {
       child = Image.file(
         File(localPath),
         width: width,
         height: height,
         fit: BoxFit.cover,
+        cacheWidth: _decodeWidth(context),
         errorBuilder: (_, _, _) => _network(context),
       );
     } else {
@@ -66,11 +67,19 @@ class AlbumCover extends StatelessWidget {
       width: width,
       height: height,
       fit: BoxFit.cover,
+      memCacheWidth: _decodeWidth(context),
+      fadeInDuration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 150),
+      fadeOutDuration: Duration.zero,
       httpHeaders: httpHeaders ?? JmClient.imageHeadersStatic,
       placeholder: (_, _) => _placeholder(context),
       errorWidget: (_, _, _) => _placeholder(context),
     );
   }
+
+  int _decodeWidth(BuildContext context) =>
+      (width * MediaQuery.devicePixelRatioOf(context)).round().clamp(1, 1200);
 
   Widget _placeholder(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;

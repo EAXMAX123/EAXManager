@@ -54,7 +54,10 @@ class GoogleLensClient {
   }
 
   /// 上传图片，返回 Lens 的结果页地址
-  Future<String> resultUrl(Uint8List jpeg, {String filename = 'image.jpg'}) async {
+  Future<String> resultUrl(
+    Uint8List jpeg, {
+    String filename = 'image.jpg',
+  }) async {
     final form = FormData.fromMap({
       'encoded_image': MultipartFile.fromBytes(
         jpeg,
@@ -68,9 +71,7 @@ class GoogleLensClient {
     try {
       resp = await dio.post<String>(
         _endpoint,
-        queryParameters: {
-          'stcs': '${DateTime.now().millisecondsSinceEpoch}',
-        },
+        queryParameters: {'stcs': '${DateTime.now().millisecondsSinceEpoch}'},
         data: form,
         options: Options(
           // 303 的 Location 就是结果页，别让它自己跟过去

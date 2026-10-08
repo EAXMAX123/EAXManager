@@ -19,13 +19,14 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
-          ? const Color(0xFF121212)
-          : scheme.surface,
+          ? const Color(0xFF11151B)
+          : scheme.surfaceContainerLowest,
     );
 
     return base.copyWith(
       appBarTheme: AppBarTheme(
-        backgroundColor: isDark ? const Color(0xFF1A1A1A) : scheme.surface,
+        backgroundColor: base.scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
         elevation: 0,
         centerTitle: false,
@@ -33,23 +34,27 @@ class AppTheme {
       cardTheme: base.cardTheme.copyWith(
         clipBehavior: Clip.antiAlias,
         elevation: 0,
-        color: isDark ? const Color(0xFF1E1E1E) : scheme.surfaceContainerLow,
+        color: isDark ? const Color(0xFF1C222B) : scheme.surfaceContainerLow,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       listTileTheme: base.listTileTheme.copyWith(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: isDark ? const Color(0xFF1A1A1A) : scheme.surface,
+        height: 68,
+        elevation: 0,
+        backgroundColor: isDark ? const Color(0xFF181E26) : scheme.surface,
         indicatorColor: scheme.primaryContainer,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: isDark
-            ? const Color(0xFF232323)
-            : scheme.surfaceContainerHighest,
+            ? const Color(0xFF202833)
+            : scheme.surfaceContainerLow,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -58,7 +63,34 @@ class AppTheme {
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: const StadiumBorder(),
+        side: BorderSide.none,
+        backgroundColor: scheme.surfaceContainerLow,
+        selectedColor: scheme.secondaryContainer,
+        showCheckmark: false,
+      ),
+      tabBarTheme: base.tabBarTheme.copyWith(
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      snackBarTheme: base.snackBarTheme.copyWith(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      bottomSheetTheme: base.bottomSheetTheme.copyWith(
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       ),
     );
   }
@@ -78,7 +110,12 @@ class AppTheme {
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => const SizedBox.shrink(),
         ),
-        Container(color: Colors.black.withValues(alpha: 0.35)),
+        Builder(
+          builder: (context) => ColoredBox(
+            color: Theme.of(context).colorScheme.surface
+                .withValues(alpha: 0.82),
+          ),
+        ),
         child,
       ],
     );

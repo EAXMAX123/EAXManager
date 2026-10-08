@@ -10,7 +10,11 @@ import 'package:image/image.dart' as img;
 
 /// 处理好的图片
 class PreparedImage {
-  const PreparedImage({required this.bytes, required this.image, required this.inset});
+  const PreparedImage({
+    required this.bytes,
+    required this.image,
+    required this.inset,
+  });
 
   /// JPEG 字节，直接拿去上传
   final Uint8List bytes;

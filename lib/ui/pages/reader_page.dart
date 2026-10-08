@@ -9,8 +9,10 @@ import 'package:flutter/material.dart';
 import '../../jm/jm_storage.dart';
 import '../../services/local_library.dart';
 import '../../services/platform_service.dart';
+import '../../services/reading_progress_writer.dart';
 import '../../source/comic_source.dart';
 import '../../state/app_services.dart';
+import '../widgets/reading_strip.dart';
 
 class ReaderPage extends StatefulWidget {
   const ReaderPage({
@@ -30,7 +32,7 @@ class ReaderPage extends StatefulWidget {
   State<ReaderPage> createState() => _ReaderPageState();
 }
 
-class _ReaderPageState extends State<ReaderPage> {
+class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   final ScrollController _scroll = ScrollController();
   final List<GlobalKey> _keys = [];
 
@@ -41,11 +43,25 @@ class _ReaderPageState extends State<ReaderPage> {
 
   int _currentIndex = 0;
   Timer? _saveThrottle;
-  double _lastOffset = 0;
+  int _initialIndex = 0;
+  bool _switching = false;
+  late final _progress = ReadingProgressWriter(
+    (page) async {
+      await AppServices.I.dao.updateReadProgress(
+        widget.sid,
+        widget.chapterIndex,
+        page,
+      );
+      await AppServices.I.reloadLibrary();
+    },
+    onError: (error, stack) =>
+        debugPrint('Reading progress save failed: $error'),
+  );
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
     PlatformService.onVolumeKey = _onVolumeKey;
     PlatformService.setVolumeKeyEnabled(
@@ -56,14 +72,38 @@ class _ReaderPageState extends State<ReaderPage> {
 
   @override
   void dispose() {
-    PlatformService.onVolumeKey = null;
-    PlatformService.setVolumeKeyEnabled(false);
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_saveProgress());
+    if (PlatformService.onVolumeKey == _onVolumeKey) {
+      PlatformService.onVolumeKey = null;
+      PlatformService.setVolumeKeyEnabled(false);
+    }
     _saveThrottle?.cancel();
     _scroll.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _saveThrottle?.cancel();
+      unawaited(_saveProgress());
+    }
+  }
+
   Future<void> _load() async {
+    try {
+      await _loadLocalChapter();
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '读取本地章节失败，请确认文件和存储权限：$error';
+      });
+    }
+  }
+
+  Future<void> _loadLocalChapter() async {
     setState(() {
       _loading = true;
       _error = null;
@@ -95,6 +135,12 @@ class _ReaderPageState extends State<ReaderPage> {
       return;
     }
 
+    final saved = await AppServices.I.dao.getBookshelf(widget.sid);
+    if (!mounted) return;
+    _initialIndex = saved != null && saved.lastChapter == widget.chapterIndex
+        ? (saved.lastPage - 1).clamp(0, files.length - 1)
+        : 0;
+    _currentIndex = _initialIndex;
     _keys
       ..clear()
       ..addAll(List.generate(files.length, (_) => GlobalKey()));
@@ -103,8 +149,6 @@ class _ReaderPageState extends State<ReaderPage> {
       _files = files;
       _loading = false;
     });
-
-    await _restoreProgress();
   }
 
   /// 这一话没有图时给一句有用的话：本地到底有哪几话
@@ -119,37 +163,22 @@ class _ReaderPageState extends State<ReaderPage> {
     return '本章还没有下载，本地有第 $shown$more 话';
   }
 
-  Future<void> _restoreProgress() async {
-    final item = await AppServices.I.dao.getBookshelf(widget.sid);
-    if (item == null || !mounted) return;
-    if (item.lastChapter != widget.chapterIndex) return;
-
-    final index = (item.lastPage - 1).clamp(0, _files.length - 1);
-    _currentIndex = index;
-
-    // 等首帧布局完成后再跳转
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      final ctx = index < _keys.length ? _keys[index].currentContext : null;
-      if (ctx == null) return;
-      final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null) return;
-      final target = _scroll.offset + box.localToGlobal(Offset.zero).dy;
-      _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
-    });
-  }
-
   /// 音量键翻页：音量上键往上翻（上一页），音量下键往下翻（下一页）
   void _onVolumeKey(int delta) {
     if (!mounted || !_scroll.hasClients) return;
+    if (ModalRoute.of(context)?.isCurrent != true) return;
     if (!AppServices.I.settings.value.volumeKeyPageTurn) return;
 
     final step = _scroll.position.viewportDimension * 0.92;
     // delta: +1 音量上键 -> 往上；-1 音量下键 -> 往下，所以是减去
     final target = (_scroll.offset - delta * step).clamp(
-      0.0,
+      _scroll.position.minScrollExtent,
       _scroll.position.maxScrollExtent,
     );
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _scroll.jumpTo(target);
+      return;
+    }
     _scroll.animateTo(
       target,
       duration: const Duration(milliseconds: 180),
@@ -158,18 +187,17 @@ class _ReaderPageState extends State<ReaderPage> {
   }
 
   void _onScroll() {
-    if (!_scroll.hasClients) return;
+    if (!_scroll.hasClients || _switching) return;
 
     // 找出当前位于视口顶部的图片
     for (var i = 0; i < _keys.length; i++) {
       final ctx = _keys[i].currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null) continue;
+      if (box == null || !box.hasSize) continue;
       final top = box.localToGlobal(Offset.zero).dy;
-      if (top <= 1) {
-        _currentIndex = i;
-      } else {
+      if (top <= 1 && top + box.size.height > 1) {
+        if (_currentIndex != i) setState(() => _currentIndex = i);
         break;
       }
     }
@@ -180,13 +208,8 @@ class _ReaderPageState extends State<ReaderPage> {
   }
 
   Future<void> _saveProgress() async {
-    final offset = _scroll.hasClients ? _scroll.offset : _lastOffset;
-    _lastOffset = offset;
-    await AppServices.I.dao.updateReadProgress(
-      widget.sid,
-      widget.chapterIndex,
-      _currentIndex + 1,
-    );
+    if (_loading || _error != null || _files.isEmpty) return;
+    await _progress.save(_currentIndex + 1);
   }
 
   void _openZoom(int index) {
@@ -217,6 +240,9 @@ class _ReaderPageState extends State<ReaderPage> {
       return;
     }
 
+    if (_switching) return;
+    _switching = true;
+    _saveThrottle?.cancel();
     await _saveProgress();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -233,16 +259,24 @@ class _ReaderPageState extends State<ReaderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () => setState(() => _showOverlay = !_showOverlay),
-        child: Stack(
-          children: [
-            Positioned.fill(child: _buildContent()),
-            if (_showOverlay) _buildTopBar(),
-            if (_showOverlay) _buildBottomBar(),
-          ],
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _saveThrottle?.cancel();
+          unawaited(_saveProgress());
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          onTap: () => setState(() => _showOverlay = !_showOverlay),
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildContent()),
+              if (_showOverlay) _buildTopBar(),
+              if (_showOverlay) _buildBottomBar(),
+            ],
+          ),
         ),
       ),
     );
@@ -275,10 +309,9 @@ class _ReaderPageState extends State<ReaderPage> {
       );
     }
 
-    return ListView.builder(
+    return ReadingStrip(
       controller: _scroll,
-      physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.zero,
+      initialIndex: _initialIndex,
       itemCount: _files.length,
       itemBuilder: (context, index) {
         return GestureDetector(
@@ -371,11 +404,12 @@ class _ReaderPageState extends State<ReaderPage> {
             TextButton.icon(
               onPressed: () {
                 if (_scroll.hasClients) {
-                  _scroll.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOut,
-                  );
+                  setState(() {
+                    _initialIndex = 0;
+                    _currentIndex = 0;
+                  });
+                  _scroll.jumpTo(0);
+                  unawaited(_saveProgress());
                 }
               },
               icon: const Icon(Icons.vertical_align_top, color: Colors.white),

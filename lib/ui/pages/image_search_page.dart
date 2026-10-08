@@ -177,9 +177,8 @@ class _ImageSearchPageState extends State<ImageSearchPage>
       settings.copyWith(imageSearchKey: _keyController.text.trim()),
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已保存')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已保存')));
   }
 
   Future<void> _saveThreshold(double value) async {
@@ -262,9 +261,7 @@ class _ImageSearchPageState extends State<ImageSearchPage>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _picked == null
-                            ? '封面图命中率最高，内页基本认不出'
-                            : _pickedName,
+                        _picked == null ? '封面图命中率最高，内页基本认不出' : _pickedName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -359,10 +356,7 @@ class _ImageSearchPageState extends State<ImageSearchPage>
               ),
               SizedBox(
                 width: 44,
-                child: Text(
-                  '${_threshold.round()}%',
-                  textAlign: TextAlign.end,
-                ),
+                child: Text('${_threshold.round()}%', textAlign: TextAlign.end),
               ),
             ],
           ),
@@ -503,9 +497,8 @@ class _ImageSearchPageState extends State<ImageSearchPage>
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Text(
         lines.join('\n'),
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.outline,
-        ),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }
@@ -574,9 +567,7 @@ class _ImageSearchPageState extends State<ImageSearchPage>
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        match.title.isEmpty
-                            ? '（这个来源没给出作品名）'
-                            : match.title,
+                        match.title.isEmpty ? '（这个来源没给出作品名）' : match.title,
                         style: theme.textTheme.titleSmall,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -669,11 +660,7 @@ class _ImageSearchPageState extends State<ImageSearchPage>
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
       child: Column(
         children: [
-          Icon(
-            Icons.image_search,
-            size: 48,
-            color: theme.colorScheme.outline,
-          ),
+          Icon(Icons.image_search, size: 48, color: theme.colorScheme.outline),
           const SizedBox(height: 12),
           Text(
             '选一张图，软件会去 SauceNAO 和 IQDB 反查它出自哪一本，\n'

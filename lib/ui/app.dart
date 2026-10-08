@@ -10,6 +10,8 @@ import 'pages/home_page.dart';
 import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
 import 'theme.dart';
+import 'widgets/mascot_navigation_bar.dart';
+import 'widgets/retained_tabs.dart';
 
 class JmReaderApp extends StatelessWidget {
   const JmReaderApp({super.key});
@@ -22,6 +24,7 @@ class JmReaderApp extends StatelessWidget {
         return MaterialApp(
           title: AppInfo.name,
           debugShowCheckedModeBanner: false,
+          themeAnimationDuration: const Duration(milliseconds: 200),
           themeMode: switch (settings.themeMode) {
             'light' => ThemeMode.light,
             'dark' => ThemeMode.dark,
@@ -139,7 +142,22 @@ class _RootShellState extends State<RootShell> {
     return Scaffold(
       backgroundColor: hasImage ? Colors.transparent : null,
       appBar: AppBar(
-        title: Text(_titles[_index]),
+        title: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
+          child: Text(_titles[_index], key: ValueKey(_index)),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Chip(
+              visualDensity: VisualDensity.compact,
+              avatar: const Icon(Icons.science_outlined, size: 16),
+              label: const Text('私人试用', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+        ],
         backgroundColor: hasImage ? Colors.transparent : null,
         // 标题压小、贴左上角，给下方的 TabBar / 内容让出空间
         toolbarHeight: 48,
@@ -151,46 +169,23 @@ class _RootShellState extends State<RootShell> {
           color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
-      body: IndexedStack(
+      body: RetainedTabs(
         index: _index,
-        children: const [
-          HomePage(),
-          LibraryPage(),
-          DownloadsPage(),
-          SettingsPage(),
-          AboutPage(),
+        builders: [
+          (_) => const HomePage(),
+          (_) => const LibraryPage(),
+          (_) => const DownloadsPage(),
+          (_) => const SettingsPage(),
+          (_) => const AboutPage(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: MascotNavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
-            label: '发现',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.collections_bookmark_outlined),
-            selectedIcon: Icon(Icons.collections_bookmark),
-            label: '书架',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.download_outlined),
-            selectedIcon: Icon(Icons.download),
-            label: '下载',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.info_outline),
-            selectedIcon: Icon(Icons.info),
-            label: '关于',
-          ),
-        ],
+        onDestinationSelected: (index) {
+          if (index == _index) return;
+          FocusManager.instance.primaryFocus?.unfocus();
+          setState(() => _index = index);
+        },
       ),
     );
   }

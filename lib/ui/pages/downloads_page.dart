@@ -7,6 +7,7 @@ import '../../data/app_database.dart';
 import '../../state/app_services.dart';
 import '../../state/download_manager.dart';
 import '../widgets/source_badge.dart';
+import '../widgets/retained_tabs.dart';
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key});
@@ -16,6 +17,14 @@ class DownloadsPage extends StatefulWidget {
 }
 
 class _DownloadsPageState extends State<DownloadsPage> {
+  bool _active = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _active = PageActivity.of(context);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -29,7 +38,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (mounted && _active) setState(() {});
   }
 
   @override
@@ -65,8 +74,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
           child: ListView.builder(
             padding: const EdgeInsets.only(bottom: 24),
             itemCount: tasks.length,
-            itemBuilder: (context, index) =>
-                _TaskTile(task: tasks[index], manager: manager),
+            itemBuilder: (context, index) => Card(
+              key: ValueKey(tasks[index].id),
+              child: _TaskTile(task: tasks[index], manager: manager),
+            ),
           ),
         ),
       ],

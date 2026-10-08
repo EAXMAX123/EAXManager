@@ -13,7 +13,11 @@ import '../widgets/album_tile.dart';
 import 'detail_page.dart';
 
 class KeywordSearchPage extends StatefulWidget {
-  const KeywordSearchPage({super.key, required this.query, this.autoRun = true});
+  const KeywordSearchPage({
+    super.key,
+    required this.query,
+    this.autoRun = true,
+  });
 
   final String query;
 
@@ -131,9 +135,8 @@ class _KeywordSearchPageState extends State<KeywordSearchPage> {
     });
 
     if (failed.isNotEmpty && merged.isNotEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('部分源搜索失败：${failed.join('；')}')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('部分源搜索失败：${failed.join('；')}')));
     }
   }
 
@@ -238,9 +241,8 @@ class _KeywordSearchPageState extends State<KeywordSearchPage> {
       next.remove(key);
     }
     if (next.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('至少要保留一个搜索源')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('至少要保留一个搜索源')));
       return;
     }
     await AppServices.I.setEnabledSources(next);
@@ -285,8 +287,7 @@ class _KeywordSearchPageState extends State<KeywordSearchPage> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (note) {
-        if (note.metrics.pixels >
-            note.metrics.maxScrollExtent - 400) {
+        if (note.metrics.pixels > note.metrics.maxScrollExtent - 400) {
           if (!_loading && _lastQuery.isNotEmpty) {
             _run(page: _page + 1);
           }

@@ -48,7 +48,10 @@ class IqdbClient {
     return dio;
   }
 
-  Future<List<ImageMatch>> search(Uint8List jpeg, {String filename = 'image.jpg'}) async {
+  Future<List<ImageMatch>> search(
+    Uint8List jpeg, {
+    String filename = 'image.jpg',
+  }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(
         jpeg,
@@ -142,11 +145,11 @@ class IqdbClient {
     }
     return null;
   }
+
   static double _similarity(dom.Element table) {
     for (final cell in table.querySelectorAll('td')) {
-      final match = RegExp(r'(\d+(?:\.\d+)?)\s*%\s*similarity').firstMatch(
-        cell.text,
-      );
+      final match = RegExp(r'(\d+(?:\.\d+)?)\s*%\s*similarity')
+          .firstMatch(cell.text);
       if (match != null) return double.tryParse(match.group(1)!) ?? 0;
     }
     return 0;

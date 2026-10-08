@@ -7,7 +7,9 @@ import '../../jm/jm_constants.dart';
 import '../../jm/jm_exception.dart';
 import '../../source/comic_source.dart';
 import '../../state/app_services.dart';
+import '../../state/result_feed.dart';
 import '../widgets/album_tile.dart';
+import '../widgets/mascot_empty_state.dart';
 import 'detail_page.dart';
 import 'favorites_page.dart';
 import 'image_search_page.dart';
@@ -25,17 +27,26 @@ class _HomePageState extends State<HomePage>
   final TextEditingController _searchController = TextEditingController();
 
   String _mode = 'site';
-  bool _loading = false;
-  String? _error;
-  List<ComicItem> _items = const [];
-  int _page = 1;
-  int _total = 0;
+  final _searchFeed = ResultFeed<ComicItem>();
+  final _rankFeed = ResultFeed<ComicItem>();
   String _lastQuery = '';
+  SearchMode _lastMode = SearchMode.parse('site');
+  List<ComicSource> _lastSources = [];
 
   // 排行参数：源 / 时间 / 分类三行，后两行的内容跟着选中的源变
   String _rankSource = 'jm';
   String _rankTime = '';
   String _rankCategory = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabs.index == 1 && !_rankFeed.initialized) _loadRank();
+  }
 
   @override
   void dispose() {
@@ -70,13 +81,6 @@ class _HomePageState extends State<HomePage>
             Tab(text: '收藏'),
             Tab(text: '识图'),
           ],
-          onTap: (i) {
-            setState(() {
-              _items = const [];
-              _error = null;
-            });
-            if (i == 1) _loadRank();
-          },
         ),
         Expanded(
           child: TabBarView(
@@ -116,7 +120,14 @@ class _HomePageState extends State<HomePage>
         ),
         _modeChips(),
         _sourceChips(),
-        Expanded(child: _buildList(onRefresh: () => _doSearch())),
+        Expanded(
+          child: _buildList(
+            feed: _searchFeed,
+            tab: 0,
+            onRefresh: () => _doSearch(),
+            onLoadMore: () => _doSearch(page: _searchFeed.page + 1),
+          ),
+        ),
       ],
     );
   }
@@ -188,55 +199,67 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _doSearch({int page = 1}) async {
-    final query = _searchController.text.trim();
+    if (page > 1 && _searchFeed.loading) return;
+    final query = page == 1 ? _searchController.text.trim() : _lastQuery;
     if (query.isEmpty) {
-      setState(() => _error = '请输入搜索关键词');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入搜索关键词')));
       return;
     }
-    _lastQuery = query;
-
-    final picked = AppServices.I.sources.ofKeys(
-      AppServices.I.settings.value.enabledSources,
-    );
+    if (page == 1) {
+      _lastQuery = query;
+      _lastMode = SearchMode.parse(_mode);
+      _lastSources = AppServices.I.sources.ofKeys(
+        AppServices.I.settings.value.enabledSources,
+      );
+    }
+    final picked = List<ComicSource>.of(_lastSources);
+    final mode = _lastMode;
+    final revision = _searchFeed.begin(reset: page == 1);
+    setState(() {});
     if (picked.isEmpty) {
-      setState(() => _error = '请至少选择一个搜索源');
+      setState(() => _searchFeed.fail(revision, '请至少选择一个搜索源'));
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
 
     // 没登录的源直接跳过：不然每次搜索都要弹一次「哔咔需要登录」，
     // 反而盖住了真正的结果
     final usable = <ComicSource>[];
     final skipped = <String>[];
+    final failed = <String>[];
     for (final source in picked) {
-      if (await source.ready()) {
-        usable.add(source);
-      } else {
-        skipped.add(source.name);
+      try {
+        if (await source.ready()) {
+          usable.add(source);
+        } else {
+          skipped.add(source.name);
+        }
+      } on Exception catch (error) {
+        failed.add('${source.name}：${_message(error)}');
       }
+      if (!mounted || !_searchFeed.accepts(revision)) return;
     }
 
-    if (!mounted) return;
+    if (!mounted || !_searchFeed.accepts(revision)) return;
     if (usable.isEmpty) {
-      setState(() {
-        _loading = false;
-        _error =
-            '勾选的源都还没登录（${skipped.join('、')}）\n'
-            '到「设置 → 账号」登录后就能搜了';
-      });
+      setState(
+        () => _searchFeed.fail(
+          revision,
+          [
+            if (skipped.isNotEmpty)
+              '这些源还没登录（${skipped.join('、')}）\n到「设置 → 账号」登录后就能搜了',
+            ...failed,
+          ].join('\n'),
+        ),
+      );
       return;
     }
 
-    final mode = SearchMode.parse(_mode);
     final pages = await Future.wait([
       for (final source in usable) _safeSearch(source, query, mode, page),
     ]);
 
-    if (!mounted) return;
+    if (!mounted || !_searchFeed.accepts(revision)) return;
 
     if (skipped.isNotEmpty) {
       ScaffoldMessenger.of(
@@ -245,7 +268,6 @@ class _HomePageState extends State<HomePage>
     }
 
     final perSource = <List<ComicItem>>[];
-    final failed = <String>[];
     var total = 0;
     for (var i = 0; i < pages.length; i++) {
       final result = pages[i];
@@ -260,12 +282,11 @@ class _HomePageState extends State<HomePage>
 
     final merged = _interleave(perSource);
     setState(() {
-      _items = page == 1 ? merged : [..._items, ...merged];
-      _total = total;
-      _page = page;
-      _loading = false;
-      // 全都失败才占满整页显示错误，部分失败只弹提示
-      _error = merged.isEmpty && failed.isNotEmpty ? failed.join('\n') : null;
+      if (merged.isEmpty && failed.isNotEmpty) {
+        _searchFeed.fail(revision, failed.join('\n'));
+      } else {
+        _searchFeed.complete(revision, merged, page: page, total: total);
+      }
     });
 
     if (failed.isNotEmpty && merged.isNotEmpty) {
@@ -349,40 +370,39 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _loadRank({int page = 1}) async {
+    if (page > 1 && _rankFeed.loading) return;
     _normalizeRankSelection();
     final source = _rankSourceOf;
+    final time = _rankTime;
+    final category = _rankCategory;
+    final revision = _rankFeed.begin(reset: page == 1);
+    setState(() {});
     if (source == null) {
-      setState(() {
-        _items = const [];
-        _error = '这个版本还没有可用的排行榜';
-        _loading = false;
-      });
+      setState(() => _rankFeed.fail(revision, '这个版本还没有可用的排行榜'));
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
     try {
       final result = await source.rank(
-        time: _rankTime,
-        category: _rankCategory,
+        time: time,
+        category: category,
         page: page,
       );
-      if (!mounted) return;
+      if (!mounted || !_rankFeed.accepts(revision)) return;
       setState(() {
-        _items = page == 1 ? result.items : [..._items, ...result.items];
-        _total = result.total;
-        _page = page;
-        _loading = false;
+        if (result.error != null) {
+          _rankFeed.fail(revision, result.error!);
+        } else {
+          _rankFeed.complete(
+            revision,
+            result.items,
+            page: page,
+            total: result.total,
+          );
+        }
       });
     } on Exception catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = _message(e);
-        _loading = false;
-      });
+      if (!mounted || !_rankFeed.accepts(revision)) return;
+      setState(() => _rankFeed.fail(revision, _message(e)));
     }
   }
 
@@ -393,8 +413,6 @@ class _HomePageState extends State<HomePage>
       _rankSource = key;
       _rankTime = '';
       _rankCategory = '';
-      _items = const [];
-      _error = null;
     });
     _loadRank();
   }
@@ -403,8 +421,6 @@ class _HomePageState extends State<HomePage>
     setState(() {
       _rankTime = key;
       _rankCategory = '';
-      _items = const [];
-      _error = null;
     });
     _loadRank();
   }
@@ -412,8 +428,6 @@ class _HomePageState extends State<HomePage>
   void _selectRankCategory(String key) {
     setState(() {
       _rankCategory = key;
-      _items = const [];
-      _error = null;
     });
     _loadRank();
   }
@@ -447,7 +461,14 @@ class _HomePageState extends State<HomePage>
             selected: _rankCategory,
             onSelected: _selectRankCategory,
           ),
-        Expanded(child: _buildList(onRefresh: () => _loadRank())),
+        Expanded(
+          child: _buildList(
+            feed: _rankFeed,
+            tab: 1,
+            onRefresh: () => _loadRank(),
+            onLoadMore: () => _loadRank(page: _rankFeed.page + 1),
+          ),
+        ),
       ],
     );
   }
@@ -480,15 +501,26 @@ class _HomePageState extends State<HomePage>
 
   // ==================== 列表 ====================
 
-  Widget _buildList({required Future<void> Function() onRefresh}) {
-    if (_error != null && _items.isEmpty) {
-      return _errorView(onRefresh);
+  Widget _buildList({
+    required ResultFeed<ComicItem> feed,
+    required int tab,
+    required Future<void> Function() onRefresh,
+    required Future<void> Function() onLoadMore,
+  }) {
+    if (feed.error != null && feed.items.isEmpty) {
+      return _errorView(feed.error!, onRefresh);
     }
-    if (_loading && _items.isEmpty) {
+    if (feed.loading && feed.items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_items.isEmpty) {
-      return _emptyView();
+    if (feed.items.isEmpty) {
+      return _emptyView(
+        feed.initialized
+            ? '没有找到结果，试试更换关键词或筛选条件'
+            : tab == 0
+            ? '输入关键词开始搜索'
+            : '选择上方条件开始浏览',
+      );
     }
 
     return RefreshIndicator(
@@ -496,29 +528,43 @@ class _HomePageState extends State<HomePage>
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) {
           if (n.metrics.pixels >= n.metrics.maxScrollExtent - 400 &&
-              !_loading &&
-              _items.length < _total) {
-            final next = _page + 1;
-            final tab = _tabs.index;
-            if (tab == 0) {
-              if (_lastQuery.isNotEmpty) _doSearch(page: next);
-            } else if (tab == 1) {
-              _loadRank(page: next);
-            }
+              _tabs.index == tab &&
+              n.depth == 0 &&
+              !feed.loading &&
+              feed.error == null &&
+              feed.items.length < feed.total) {
+            onLoadMore();
           }
           return false;
         },
         child: ListView.builder(
+          key: PageStorageKey('discovery-$tab'),
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 24),
-          itemCount: _items.length + (_loading ? 1 : 0),
+          itemCount:
+              feed.items.length + (feed.loading || feed.error != null ? 1 : 0),
           itemBuilder: (context, index) {
-            if (index >= _items.length) {
+            if (index >= feed.items.length) {
+              if (feed.error != null) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(feed.error!, textAlign: TextAlign.center),
+                      TextButton(
+                        onPressed: onLoadMore,
+                        child: const Text('重试加载'),
+                      ),
+                    ],
+                  ),
+                );
+              }
               return const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(child: CircularProgressIndicator()),
               );
             }
-            final item = _items[index];
+            final item = feed.items[index];
             return AlbumTile(item: item, onTap: () => _openDetail(item));
           },
         ),
@@ -526,27 +572,11 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _emptyView() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.search_off,
-            size: 48,
-            color: Theme.of(context).colorScheme.outline,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _tabs.index == 0 ? '输入关键词开始搜索' : '点击上方条件开始浏览',
-            style: TextStyle(color: Theme.of(context).colorScheme.outline),
-          ),
-        ],
-      ),
-    );
+  Widget _emptyView(String message) {
+    return MascotEmptyState(message: message);
   }
 
-  Widget _errorView(Future<void> Function() onRefresh) {
+  Widget _errorView(String message, Future<void> Function() onRefresh) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -559,7 +589,7 @@ class _HomePageState extends State<HomePage>
               color: Theme.of(context).colorScheme.error,
             ),
             const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center),
+            Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             FilledButton(onPressed: onRefresh, child: const Text('重试')),
           ],
@@ -568,4 +598,3 @@ class _HomePageState extends State<HomePage>
     );
   }
 }
-

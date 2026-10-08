@@ -55,8 +55,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ],
         selected: {_source},
         showSelectedIcon: false,
-        onSelectionChanged: (value) =>
-            setState(() => _source = value.first),
+        onSelectionChanged: (value) => setState(() => _source = value.first),
       ),
     );
   }
@@ -375,8 +374,10 @@ class _JmFavoritesState extends State<_JmFavorites> {
             return ListTile(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) =>
-                      DetailPage(sid: SourceId('jm', item.id), title: item.name),
+                  builder: (_) => DetailPage(
+                    sid: SourceId('jm', item.id),
+                    title: item.name,
+                  ),
                 ),
               ),
               onLongPress: () => _removeFavorite(item),
@@ -684,8 +685,7 @@ class _PicaFavoritesState extends State<_PicaFavorites> {
             return ListTile(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) =>
-                      DetailPage(sid: item.sid, title: item.title),
+                  builder: (_) => DetailPage(sid: item.sid, title: item.title),
                 ),
               ),
               onLongPress: () => _removeFavorite(item),
@@ -725,22 +725,22 @@ class _PicaFavoritesState extends State<_PicaFavorites> {
 /// 取消收藏前的确认框
 Future<bool?> _confirmRemove(BuildContext context, String title) =>
     showDialog<bool>(
-  context: context,
-  builder: (ctx) => AlertDialog(
-    title: const Text('取消收藏'),
-    content: Text('把《$title》从收藏夹中移除？'),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(ctx, false),
-        child: const Text('取消'),
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('取消收藏'),
+        content: Text('把《$title》从收藏夹中移除？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('移除'),
+          ),
+        ],
       ),
-      FilledButton(
-        onPressed: () => Navigator.pop(ctx, true),
-        child: const Text('移除'),
-      ),
-    ],
-  ),
-);
+    );
 
 class _EmptyView extends StatelessWidget {
   const _EmptyView({required this.text});

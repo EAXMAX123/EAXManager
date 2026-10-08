@@ -1,8 +1,3 @@
-/// 搜索结果里的一行：封面 + 标题 + 来源角标
-///
-/// 搜索页、关键词结果页、识图结果页都用它，样式保持一致。
-library;
-
 import 'package:flutter/material.dart';
 
 import '../../source/comic_source.dart';
@@ -19,32 +14,54 @@ class AlbumTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = item.subtitle.isNotEmpty ? item.subtitle : item.author;
-
-    return ListTile(
-      onTap: onTap,
-      leading: AlbumCover(
-        albumId: item.sid.id,
-        coverUrl: item.coverUrl,
-        httpHeaders: item.coverHeaders,
-        show: AppServices.I.settings.value.showCoverInList,
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+    final showCover = AppServices.I.settings.value.showCoverInList;
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              if (showCover) ...[
+                AlbumCover(
+                  albumId: item.sid.id,
+                  coverUrl: item.coverUrl,
+                  httpHeaders: item.coverHeaders,
+                  width: 60,
+                  height: 80,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    SourceBadge(source: item.sid.source),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, size: 20),
+            ],
           ),
-          const SizedBox(width: 6),
-          SourceBadge(source: item.sid.source),
-        ],
+        ),
       ),
-      subtitle: subtitle.isEmpty
-          ? null
-          : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right),
     );
   }
 }

@@ -74,9 +74,10 @@ class ImageMatch {
   }
 
   static String _idOf(String url) {
-    final numbers = RegExp(
-      r'\d{3,}',
-    ).allMatches(url).map((e) => e.group(0)!).toList();
+    final numbers = RegExp(r'\d{3,}')
+        .allMatches(url)
+        .map((e) => e.group(0)!)
+        .toList();
     return numbers.isEmpty ? url.trim().toLowerCase() : numbers.last;
   }
 

@@ -219,7 +219,9 @@ class PixivSource implements ComicSource {
     addMeta('浏览', '${illust['total_view'] ?? ''}');
     addMeta('收藏', '${illust['total_bookmarks'] ?? ''}');
     if (PixivParsing.intOf(illust['x_restrict']) > 0) addMeta('分级', 'R-18');
-    if (PixivParsing.intOf(illust['illust_ai_type']) > 0) addMeta('AI', 'AI 生成');
+    if (PixivParsing.intOf(illust['illust_ai_type']) > 0) {
+      addMeta('AI', 'AI 生成');
+    }
 
     return ComicDetail(
       sid: SourceId(key, id),
@@ -346,9 +348,7 @@ class PixivParsing {
 
     // 单页作品：原图和大图各在一个地方，按档位挑
     final single = illust['meta_single_page'];
-    final original = single is Map
-        ? _textOf(single['original_image_url'])
-        : '';
+    final original = single is Map ? _textOf(single['original_image_url']) : '';
     final large = _pick(illust['image_urls'], preferLarge);
 
     if (preferLarge && large.isNotEmpty) return [large];

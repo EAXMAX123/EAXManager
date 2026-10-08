@@ -354,8 +354,11 @@ class AppServices {
   ///
   /// GitHub 的下载链接在国内常常直连不通，所以先探一圈加速站，
   /// 把第一个答应的交给浏览器，省得用户点进去看到一片空白。
-  Future<String> resolveDownloadUrl(String url) => UpdateService
-      .reachableDownloadUrl(url, transport: _transportOf(settings.value));
+  Future<String> resolveDownloadUrl(String url) =>
+      UpdateService.reachableDownloadUrl(
+        url,
+        transport: _transportOf(settings.value),
+      );
 
   /// 记下这个版本已经提醒过，下次启动不再自动弹窗
   Future<void> markUpdateNotified(String version) =>

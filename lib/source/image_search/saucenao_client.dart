@@ -25,7 +25,10 @@ import 'image_search_models.dart';
 
 /// 被限速了，等一会儿再来
 class ImageSearchThrottled implements Exception {
-  const ImageSearchThrottled(this.message, {this.wait = const Duration(seconds: 12)});
+  const ImageSearchThrottled(
+    this.message, {
+    this.wait = const Duration(seconds: 12),
+  });
 
   final String message;
 
@@ -73,7 +76,10 @@ class SauceNaoClient {
   }
 
   /// 传一张图去搜，返回命中的条目（已按相似度降序）
-  Future<List<ImageMatch>> search(Uint8List jpeg, {String filename = 'image.jpg'}) async {
+  Future<List<ImageMatch>> search(
+    Uint8List jpeg, {
+    String filename = 'image.jpg',
+  }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(
         jpeg,
@@ -177,10 +183,7 @@ class SauceNaoClient {
           similarity: similarity,
           title: fields['Title'] ?? fields['Material'] ?? '',
           author:
-              fields['Author'] ??
-              fields['Member'] ??
-              fields['Creator'] ??
-              '',
+              fields['Author'] ?? fields['Member'] ?? fields['Creator'] ?? '',
           fields: fields,
           sourceUrl: sourceUrl,
           thumbnailUrl: thumb,

@@ -10,7 +10,8 @@ Map<String, dynamic> _multiPage() => {
   'type': 'illust',
   'page_count': 2,
   'image_urls': {
-    'large': 'https://i.pximg.net/c/600x1200_90/img-master/img/1_p0_master1200.jpg',
+    'large':
+        'https://i.pximg.net/c/600x1200_90/img-master/img/1_p0_master1200.jpg',
   },
   'meta_pages': [
     {
@@ -44,7 +45,8 @@ Map<String, dynamic> _singlePage() => {
   'type': 'illust',
   'page_count': 1,
   'image_urls': {
-    'large': 'https://i.pximg.net/c/600x1200_90/img-master/img/1_p0_master1200.jpg',
+    'large':
+        'https://i.pximg.net/c/600x1200_90/img-master/img/1_p0_master1200.jpg',
   },
   'meta_pages': <dynamic>[],
   'meta_single_page': {
@@ -95,16 +97,17 @@ void main() {
     test('把 i.pximg.net 换成当前反代域名', () {
       final client = PixivClient(imageProxies: ['proxy.test']);
       expect(
-        client.imageUrl(
-          'https://i.pximg.net/img-original/img/1_p0.jpg',
-        ),
+        client.imageUrl('https://i.pximg.net/img-original/img/1_p0.jpg'),
         'https://proxy.test/img-original/img/1_p0.jpg',
       );
     });
 
     test('不是 pximg 的地址原样返回', () {
       final client = PixivClient(imageProxies: ['proxy.test']);
-      expect(client.imageUrl('https://example.com/a.jpg'), 'https://example.com/a.jpg');
+      expect(
+        client.imageUrl('https://example.com/a.jpg'),
+        'https://example.com/a.jpg',
+      );
       expect(client.imageUrl(''), '');
     });
 
@@ -173,7 +176,10 @@ void main() {
 
     test('档位有中文说明', () {
       expect(PixivParsing.qualityLabel(PixivParsing.qualityOriginal), '原图');
-      expect(PixivParsing.qualityLabel(PixivParsing.qualityLarge), '较大（1200px）');
+      expect(
+        PixivParsing.qualityLabel(PixivParsing.qualityLarge),
+        '较大（1200px）',
+      );
     });
   });
 

@@ -56,7 +56,8 @@ class ImageSearchService {
 
   IqdbClient get iqdb => _iqdb ??= IqdbClient(transport: _transport);
 
-  GoogleLensClient get lens => _lens ??= GoogleLensClient(transport: _transport);
+  GoogleLensClient get lens =>
+      _lens ??= GoogleLensClient(transport: _transport);
 
   /// 两次 SauceNAO 请求之间至少隔这么久
   ///
@@ -68,7 +69,11 @@ class ImageSearchService {
   DateTime _lastSauceNao = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// 改了 key 之后重新配置
-  void configure({String? sauceNaoKey, bool? enableSauceNao, bool? enableIqdb}) {
+  void configure({
+    String? sauceNaoKey,
+    bool? enableSauceNao,
+    bool? enableIqdb,
+  }) {
     if (sauceNaoKey != null) {
       _key = sauceNaoKey;
       _sauceNao.apiKey = sauceNaoKey;
@@ -134,9 +139,7 @@ class ImageSearchService {
 
     final merged = mergeMatches(collected);
     if (merged.isEmpty && notice.isEmpty) {
-      notice = segmentRetry
-          ? '没找到匹配。这张图可能不在识图站的索引里（内页比封面难认很多）'
-          : '没找到匹配';
+      notice = segmentRetry ? '没找到匹配。这张图可能不在识图站的索引里（内页比封面难认很多）' : '没找到匹配';
     }
 
     return ImageSearchReport(
@@ -172,7 +175,11 @@ class ImageSearchService {
         _lastSauceNao = DateTime.now();
         final items = await _sauceNao.search(bytes);
         attempts.add(
-          ImageSearchAttempt(engine: 'SauceNAO', region: region, count: items.length),
+          ImageSearchAttempt(
+            engine: 'SauceNAO',
+            region: region,
+            count: items.length,
+          ),
         );
         return items;
       } on ImageSearchThrottled catch (e) {
@@ -191,7 +198,11 @@ class ImageSearchService {
         return const [];
       } on Exception catch (e) {
         attempts.add(
-          ImageSearchAttempt(engine: 'SauceNAO', region: region, error: _message(e)),
+          ImageSearchAttempt(
+            engine: 'SauceNAO',
+            region: region,
+            error: _message(e),
+          ),
         );
         return const [];
       }

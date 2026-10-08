@@ -697,7 +697,11 @@ class JmClient {
   /// 启动时恢复已保存的登录信息（cookie 由 PersistCookieJar 自动恢复）
   ///
   /// 密码留着不是为了「记住我」这个开关，而是会话过期后唯一的自救手段。
-  void restoreAccount(String username, {String avs = '', String password = ''}) {
+  void restoreAccount(
+    String username, {
+    String avs = '',
+    String password = '',
+  }) {
     _username = username.trim();
     _avs = avs.trim();
     _password = password;

@@ -189,7 +189,9 @@ class UpdateService {
           return;
         }
         remaining--;
-        if (remaining == 0 && !completer.isCompleted) completer.complete(url.trim());
+        if (remaining == 0 && !completer.isCompleted) {
+          completer.complete(url.trim());
+        }
       }());
     }
 
@@ -200,10 +202,7 @@ class UpdateService {
   }
 
   /// 探一下这个地址能不能拿到内容
-  static Future<bool> _probeDownload(
-    String url,
-    NetTransport transport,
-  ) async {
+  static Future<bool> _probeDownload(String url, NetTransport transport) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) return false;
 

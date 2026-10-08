@@ -324,7 +324,10 @@ void main() {
     });
 
     test('标准结果行结构优先，不会被退化解析重复计数', () {
-      final items = EhParser.parseRankItems(_searchHtml, coverHeaders: const {});
+      final items = EhParser.parseRankItems(
+        _searchHtml,
+        coverHeaders: const {},
+      );
       expect(items.length, 2);
     });
 
