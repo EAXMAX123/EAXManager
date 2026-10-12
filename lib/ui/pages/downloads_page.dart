@@ -44,7 +44,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
   @override
   Widget build(BuildContext context) {
     final manager = AppServices.I.downloads;
-    final tasks = manager.tasks;
+    final tasks = manager.visibleTasks;
 
     if (tasks.isEmpty) {
       return Center(
@@ -102,13 +102,25 @@ class _DownloadsPageState extends State<DownloadsPage> {
             ),
           ),
           TextButton(
-            onPressed: () async {
-              await manager.clearFinished();
-              await AppServices.I.reloadLibrary();
-            },
-            child: const Text('清除已完成'),
+            onPressed: () => _clearFinished(manager),
+            child: const Text('清理记录'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 清理下载列表里的已完成任务
+  ///
+  /// 只清记录、不动文件：图片还在书架上，重新下全篇时
+  /// 已下好的章节会被跳过，不会重下一遍。
+  Future<void> _clearFinished(DownloadManager manager) async {
+    final count = await manager.clearFinished();
+    await AppServices.I.reloadLibrary();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(count == 0 ? '还没有已完成的任务' : '已清理 $count 条记录，图片仍留在书架里'),
       ),
     );
   }

@@ -14,6 +14,7 @@ import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 /**
  * 主 Activity：
@@ -79,8 +80,72 @@ class MainActivity : FlutterActivity() {
                     result.success(openUrl(call.argument<String>("url") ?: ""))
                 }
 
+                "playEasterEggVideo" -> {
+                    val asset = call.argument<String>("asset") ?: ""
+                    result.success(playEasterEggVideo(asset))
+                }
+
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * 彩蛋视频：先把安装包里的视频拷进缓存目录，再交给原生播放器全屏放。
+     *
+     * 拷贝放后台线程，连按五下的时候不卡手感；拷过一次就记个戳，
+     * 之后直接复用，不用每次都搬 60 多兆。
+     */
+    private fun playEasterEggVideo(asset: String): Boolean {
+        if (asset.isEmpty()) return false
+        val entry = "flutter_assets/$asset"
+        val target = File(cacheDir, EGG_FILE)
+        val stamp = File(cacheDir, EGG_STAMP)
+        val token = "$entry|${updateTime()}"
+
+        Thread {
+            val ready = try {
+                val copied = target.length()
+                val upToDate = copied > 0 &&
+                    stamp.takeIf { it.exists() }?.readText() == "$token|$copied"
+                if (upToDate) {
+                    true
+                } else {
+                    val written = assets.open(entry).use { input ->
+                        target.outputStream().use { input.copyTo(it) }
+                    }
+                    stamp.writeText("$token|$written")
+                    written > 0
+                }
+            } catch (e: Exception) {
+                false
+            }
+            if (!ready) return@Thread
+
+            runOnUiThread {
+                try {
+                    startActivity(
+                        Intent(this, EasterEggPlayerActivity::class.java)
+                            .putExtra(
+                                EasterEggPlayerActivity.EXTRA_PATH,
+                                target.absolutePath,
+                            ),
+                    )
+                } catch (e: Exception) {
+                    // 播放器起不来就当没这回事，别把 App 弄崩
+                }
+            }
+        }.start()
+        return true
+    }
+
+    /** 安装包每次更新都变，用它把旧的缓存视频作废 */
+    @Suppress("DEPRECATION")
+    private fun updateTime(): Long {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+        } catch (e: Exception) {
+            0L
         }
     }
 
@@ -216,5 +281,11 @@ class MainActivity : FlutterActivity() {
 
         /** 与 Dart 侧 JmStorage.nomediaFileName 保持一致 */
         private const val NOMEDIA_FILE = ".nomedia"
+
+        /** 彩蛋视频拷到缓存目录后的文件名 */
+        private const val EGG_FILE = "easter_egg.mp4"
+
+        /** 记录「这份视频是从哪个 asset 拷的、拷了多少字节」，用来判断要不要重拷 */
+        private const val EGG_STAMP = "easter_egg.stamp"
     }
 }

@@ -141,4 +141,26 @@ class PlatformService {
       // 忽略
     }
   }
+
+  /// 彩蛋视频在 assets 里的位置
+  static const String easterEggAsset = 'assets/easter_egg/egg.mp4';
+
+  /// 全屏播放彩蛋视频
+  ///
+  /// 交给原生那边的播放器：黑底铺满、带声音，点一下画面出关闭按钮，
+  /// 返回键也能直接退出来。素材是打包进安装包的，不联网。
+  ///
+  /// 返回 true 表示已经在放了；手机以外的环境没有原生实现，返回 false。
+  static Future<bool> playEasterEggVideo() async {
+    try {
+      return await _channel.invokeMethod<bool>('playEasterEggVideo', {
+            'asset': easterEggAsset,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
 }

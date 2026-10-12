@@ -427,7 +427,14 @@ class DownloadManager extends ChangeNotifier {
   /// 重新下载
   Future<void> retryTask(int id) async {
     final index = tasks.indexWhere((t) => t.id == id);
-    if (index >= 0) _details.remove(tasks[index].sid.key);
+    if (index >= 0) {
+      _details.remove(tasks[index].sid.key);
+      // 清过列表的章节重新下载时，要重新出现在下载列表里
+      if (tasks[index].hidden) {
+        await dao.setTaskHidden(id, false);
+        tasks = [...tasks]..[index] = tasks[index].copyWith(hidden: false);
+      }
+    }
     await _updateTask(
       id,
       status: DownloadStatus.pending,
@@ -446,12 +453,24 @@ class DownloadManager extends ChangeNotifier {
     _pump();
   }
 
-  Future<void> clearFinished() async {
-    for (final t in tasks.where((t) => t.status == DownloadStatus.done)) {
-      await dao.deleteTask(t.id);
-    }
+  /// 下载列表里要显示的任务（清掉的已完成任务只在后台留个记录）
+  List<DownloadTask> get visibleTasks => tasks.where((t) => !t.hidden).toList();
+
+  /// 清空下载列表里的「已完成」
+  ///
+  /// 只把记录从列表里收起来，磁盘上的图片一张都不动 —— 书架里照常能看、
+  /// 能读。同时「这一章下过了」这件事仍记在库里，重新下全篇时不会再排
+  /// 一遍已经下好的章节。
+  Future<int> clearFinished() async {
+    final finished = tasks
+        .where((t) => t.status == DownloadStatus.done)
+        .toList();
+    if (finished.isEmpty) return 0;
+
+    await dao.hideFinishedTasks();
     await reload();
     _pump();
+    return finished.length;
   }
 
   /// 节流通知，避免高频刷新拖慢界面

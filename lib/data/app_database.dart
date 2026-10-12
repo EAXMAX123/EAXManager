@@ -27,11 +27,12 @@ class AppDatabase {
     final path = p.join(dir, 'jm_reader.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) => _createTables(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _migrateV1ToV2(db);
         if (oldVersion < 3) await _migrateV2ToV3(db);
+        if (oldVersion < 4) await _migrateV3ToV4(db);
       },
     );
   }
@@ -71,6 +72,7 @@ class AppDatabase {
         failed          INTEGER NOT NULL DEFAULT 0,
         error           TEXT NOT NULL DEFAULT '',
         dir_path        TEXT NOT NULL DEFAULT '',
+        hidden          INTEGER NOT NULL DEFAULT 0,
         created_at      INTEGER NOT NULL DEFAULT 0,
         updated_at      INTEGER NOT NULL DEFAULT 0
       )
@@ -130,6 +132,21 @@ class AppDatabase {
       );
     }
     await _createCategoryTables(db);
+  }
+
+  /// v3 -> v4：下载任务加「隐藏」标记
+  ///
+  /// 「清除已完成」以前是直接删任务记录，删完就再也记不住哪些章节下过了，
+  /// 重新下全篇时会把已经躺在磁盘上的章节重排一遍。改成打标记后，
+  /// 记录还留着（详情页照常显示「已下载」），只是不在下载列表里露面。
+  static Future<void> _migrateV3ToV4(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(download_task)');
+    final hasHidden = columns.any((c) => c['name'] == 'hidden');
+    if (!hasHidden) {
+      await db.execute(
+        'ALTER TABLE download_task ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   /// v1 -> v2：加 source 列、主键改复合。老数据全部归到 jm 源，不丢书。
@@ -258,6 +275,7 @@ class DownloadTask {
     required this.failed,
     required this.error,
     this.dirPath = '',
+    this.hidden = false,
   });
 
   final int id;
@@ -279,6 +297,9 @@ class DownloadTask {
   /// 都还能把书认回来。
   final String dirPath;
 
+  /// 已经从下载列表里清掉、但记录仍然保留（用来记住这一章已经下过）
+  final bool hidden;
+
   SourceId get sid => SourceId(source, albumId);
 
   double get progress => total == 0 ? 0 : (done / total).clamp(0, 1);
@@ -290,6 +311,7 @@ class DownloadTask {
     int? failed,
     String? error,
     String? dirPath,
+    bool? hidden,
   }) => DownloadTask(
     id: id,
     source: source,
@@ -304,6 +326,7 @@ class DownloadTask {
     failed: failed ?? this.failed,
     error: error ?? this.error,
     dirPath: dirPath ?? this.dirPath,
+    hidden: hidden ?? this.hidden,
   );
 
   factory DownloadTask.fromRow(Map<String, Object?> row) => DownloadTask(
@@ -320,6 +343,7 @@ class DownloadTask {
     failed: row['failed'] as int? ?? 0,
     error: row['error'] as String? ?? '',
     dirPath: row['dir_path'] as String? ?? '',
+    hidden: (row['hidden'] as int? ?? 0) != 0,
   );
 }
 
@@ -528,6 +552,7 @@ class AppDao {
       'failed': task.failed,
       'error': task.error,
       'dir_path': task.dirPath,
+      'hidden': task.hidden ? 1 : 0,
       'created_at': now,
       'updated_at': now,
     });
@@ -542,6 +567,28 @@ class AppDao {
   Future<void> deleteTask(int id) async {
     final db = await _db.database;
     await db.delete('download_task', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// 把「已完成」的任务从下载列表里藏起来（记录保留，文件不动）
+  Future<int> hideFinishedTasks() async {
+    final db = await _db.database;
+    return db.update(
+      'download_task',
+      {'hidden': 1},
+      where: 'status = ? AND hidden = 0',
+      whereArgs: [DownloadStatus.done.name],
+    );
+  }
+
+  /// 重新下载时把任务重新摆回下载列表
+  Future<void> setTaskHidden(int id, bool hidden) async {
+    final db = await _db.database;
+    await db.update(
+      'download_task',
+      {'hidden': hidden ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> deleteTasksByAlbum(SourceId sid) async {

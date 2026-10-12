@@ -12,6 +12,7 @@ import 'pages/settings_page.dart';
 import 'theme.dart';
 import 'widgets/mascot_navigation_bar.dart';
 import 'widgets/retained_tabs.dart';
+import 'widgets/sponsor_chip.dart';
 
 class JmReaderApp extends StatelessWidget {
   const JmReaderApp({super.key});
@@ -149,13 +150,9 @@ class _RootShellState extends State<RootShell> {
           child: Text(_titles[_index], key: ValueKey(_index)),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Chip(
-              visualDensity: VisualDensity.compact,
-              avatar: const Icon(Icons.science_outlined, size: 16),
-              label: const Text('私人试用', style: TextStyle(fontSize: 11)),
-            ),
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: SponsorChip(),
           ),
         ],
         backgroundColor: hasImage ? Colors.transparent : null,

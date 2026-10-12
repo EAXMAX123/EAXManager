@@ -388,12 +388,32 @@ class _LibraryPageState extends State<LibraryPage>
   Widget build(BuildContext context) {
     return Column(
       children: [
-        TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: '已下载'),
-            Tab(text: '追更'),
-          ],
+        // 「已下载 / 追更」这一条做得扁一点，
+        // 高度省下来给下面的漫画列表。
+        MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.15,
+          child: SizedBox(
+            height: 34,
+            child: TabBar(
+              controller: _tabs,
+              dividerColor: Colors.transparent,
+              indicatorSize: TabBarIndicatorSize.label,
+              indicatorWeight: 2.5,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+              labelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              tabs: const [
+                Tab(height: 34, text: '已下载'),
+                Tab(height: 34, text: '追更'),
+              ],
+            ),
+          ),
         ),
         Expanded(
           child: TabBarView(
@@ -408,17 +428,22 @@ class _LibraryPageState extends State<LibraryPage>
   /// 分类筛选条：全部 + 各个分类 + 新建
   Widget _categoryBar() {
     final scheme = Theme.of(context).colorScheme;
+    const labelStyle = TextStyle(fontSize: 13);
+    const density = VisualDensity.compact;
 
     return SizedBox(
-      height: 46,
+      height: 38,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
         children: [
           Padding(
             padding: const EdgeInsets.only(right: 6),
             child: ChoiceChip(
               label: const Text('全部'),
+              labelStyle: labelStyle,
+              visualDensity: density,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               selected: _categoryId == null,
               onSelected: (_) => setState(() => _categoryId = null),
             ),
@@ -431,20 +456,29 @@ class _LibraryPageState extends State<LibraryPage>
                   '${category.name}'
                   '（${_categoryAlbums[category.id]?.length ?? 0}）',
                 ),
+                labelStyle: labelStyle,
+                visualDensity: density,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 selected: _categoryId == category.id,
                 onSelected: (_) => setState(() => _categoryId = category.id),
               ),
             ),
           ActionChip(
-            avatar: Icon(Icons.add, size: 16, color: scheme.primary),
+            avatar: Icon(Icons.add, size: 15, color: scheme.primary),
             label: const Text('新建分类'),
+            labelStyle: labelStyle,
+            visualDensity: density,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             onPressed: _createCategory,
           ),
           Padding(
             padding: const EdgeInsets.only(left: 6),
             child: ActionChip(
-              avatar: Icon(Icons.sort, size: 16, color: scheme.primary),
+              avatar: Icon(Icons.sort, size: 15, color: scheme.primary),
               label: Text('排序：${_sortLabels[_sortMode] ?? '最近阅读'}'),
+              labelStyle: labelStyle,
+              visualDensity: density,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               onPressed: _pickSort,
             ),
           ),
@@ -517,18 +551,32 @@ class _LibraryPageState extends State<LibraryPage>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
           child: TextField(
             controller: _search,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
+              isDense: true,
               hintText: '搜索书架 · 名称 / 作者 / ID',
-              prefixIcon: const Icon(Icons.search),
+              hintStyle: const TextStyle(fontSize: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 38,
+                minHeight: 32,
+              ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 38,
+                minHeight: 32,
+              ),
               suffixIcon: _search.text.isEmpty
                   ? null
                   : IconButton(
                       tooltip: '清空搜索',
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Icons.close, size: 18),
                       onPressed: () => setState(_search.clear),
                     ),
             ),
