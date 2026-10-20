@@ -151,6 +151,52 @@ class PlatformService {
     }
   }
 
+  /// 调系统分享面板（QQ、微信、文件管理器等）
+  ///
+  /// 手机上通过 FileProvider 把应用缓存里的文件临时授权给目标 App；
+  /// 电脑上直接交给系统默认程序打开。
+  static Future<bool> shareFile({
+    required String path,
+    String mimeType = 'application/pdf',
+    String title = '分享',
+  }) async {
+    if (path.trim().isEmpty) return false;
+    if (!Platform.isAndroid) return _openWithSystem(path);
+    try {
+      return await _channel.invokeMethod<bool>('shareFile', {
+            'path': path,
+            'mimeType': mimeType,
+            'title': title,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// 给 PDF 加打开密码（Android 原生 PDFBox）
+  static Future<bool> protectPdf({
+    required String inputPath,
+    required String outputPath,
+    required String password,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('protectPdf', {
+            'input': inputPath,
+            'output': outputPath,
+            'password': password,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// 通知系统相册重新扫描这些目录
   ///
   /// 目录里放了 `.nomedia` 之后，这次扫描会把之前已经收录进相册的图片清掉。

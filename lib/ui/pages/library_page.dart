@@ -17,6 +17,7 @@ import '../widgets/source_badge.dart';
 import '../widgets/retained_tabs.dart';
 import '../reader_launcher.dart';
 import 'detail_page.dart';
+import 'packed_pdfs_view.dart';
 import 'subscriptions_view.dart';
 
 class LibraryPage extends StatefulWidget {
@@ -28,7 +29,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(length: 3, vsync: this);
   final _search = TextEditingController();
   bool _active = true;
   String _downloadSignature = '';
@@ -414,6 +415,7 @@ class _LibraryPageState extends State<LibraryPage>
               ),
               tabs: const [
                 Tab(height: 34, text: '已下载'),
+                Tab(height: 34, text: '已打包'),
                 Tab(height: 34, text: '追更'),
               ],
             ),
@@ -422,7 +424,11 @@ class _LibraryPageState extends State<LibraryPage>
         Expanded(
           child: TabBarView(
             controller: _tabs,
-            children: [_buildShelf(), const SubscriptionsView()],
+            children: [
+              _buildShelf(),
+              const PackedPdfsView(),
+              const SubscriptionsView(),
+            ],
           ),
         ),
       ],

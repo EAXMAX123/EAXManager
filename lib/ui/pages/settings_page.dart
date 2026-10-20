@@ -2,7 +2,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../app_info.dart';
 import '../../data/settings_store.dart';
@@ -30,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage>
   final TextEditingController _pixivApi = TextEditingController();
   final TextEditingController _pixivProxy = TextEditingController();
   final TextEditingController _rule34Key = TextEditingController();
+  final TextEditingController _sharePassword = TextEditingController();
 
   bool _storageGranted = false;
 
@@ -73,6 +73,7 @@ class _SettingsPageState extends State<SettingsPage>
     _pixivApi.text = s.pixivApiBase;
     _pixivProxy.text = s.pixivImageProxy;
     _rule34Key.text = s.rule34ApiKey;
+    _sharePassword.text = s.sharePdfPassword;
   }
 
   @override
@@ -85,6 +86,7 @@ class _SettingsPageState extends State<SettingsPage>
     _pixivApi.dispose();
     _pixivProxy.dispose();
     _rule34Key.dispose();
+    _sharePassword.dispose();
     super.dispose();
   }
 
@@ -98,7 +100,7 @@ class _SettingsPageState extends State<SettingsPage>
         return ListView(
           padding: const EdgeInsets.only(bottom: 32),
           children: [
-            _section('下载'),
+            _section('下载与存储'),
             ValueListenableBuilder<String>(
               valueListenable: AppServices.I.rootDir,
               builder: (context, root, _) => Column(
@@ -237,8 +239,26 @@ class _SettingsPageState extends State<SettingsPage>
               label: '${s.jpegQuality}',
               onChanged: (v) => _update(s.copyWith(jpegQuality: v.round())),
             ),
+            ListTile(
+              leading: const Icon(Icons.storage_outlined),
+              title: const Text('存储权限'),
+              subtitle: Text(
+                _storageGranted
+                    ? '已获得「所有文件访问」，可存到手机公共目录'
+                    : '未获得，下载会存到应用私有目录（文件管理器不易查看）',
+              ),
+              onTap: () async {
+                if (!_storageGranted) {
+                  await PlatformService.requestAllFilesAccess();
+                }
+                await Future<void>.delayed(const Duration(milliseconds: 400));
+                _storageGranted = await PlatformService.hasAllFilesAccess();
+                await AppServices.I.refreshRoot();
+                if (mounted) setState(() {});
+              },
+            ),
 
-            _section('网络'),
+            _section('网络与图站'),
             _tile(
               icon: Icons.vpn_lock_outlined,
               title: '代理地址',
@@ -272,176 +292,199 @@ class _SettingsPageState extends State<SettingsPage>
                 await AppServices.I.refreshNetworkEnv();
               },
             ),
-            _tile(
-              icon: Icons.edit_location_alt_outlined,
-              title: '自定义解析',
-              subtitle: s.customIpMap.trim().isEmpty
-                  ? '手动指定「域名 = IP」。内置地址过期时用得上'
-                  : '${s.customIpMap.trim().split('\n').where((e) => e.trim().isNotEmpty).length} 条规则',
-              trailing: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editText(
+            ExpansionTile(
+              leading: const Icon(Icons.tune_outlined),
+              title: const Text('高级线路设置'),
+              subtitle: const Text('自定义解析、域名和线路探测，平时不用动'),
+              children: [
+                _tile(
+                  icon: Icons.edit_location_alt_outlined,
                   title: '自定义解析',
-                  controller: _ipMap,
-                  hint: 'www.cdngwc.cc = 104.21.10.153',
-                  maxLines: 6,
-                  onSave: (v) async {
-                    await _update(s.copyWith(customIpMap: v));
-                    await AppServices.I.refreshNetworkEnv();
+                  subtitle: s.customIpMap.trim().isEmpty
+                      ? '手动指定「域名 = IP」。内置地址过期时用得上'
+                      : '${s.customIpMap.trim().split('\n').where((e) => e.trim().isNotEmpty).length} 条规则',
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editText(
+                      title: '自定义解析',
+                      controller: _ipMap,
+                      hint: 'www.cdngwc.cc = 104.21.10.153',
+                      maxLines: 6,
+                      onSave: (v) async {
+                        await _update(s.copyWith(customIpMap: v));
+                        await AppServices.I.refreshNetworkEnv();
+                      },
+                    ),
+                  ),
+                ),
+                _tile(
+                  icon: Icons.dns_outlined,
+                  title: '自定义域名',
+                  subtitle: s.customDomains.isEmpty
+                      ? '自动选择（推荐）'
+                      : s.customDomains.join(', '),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editText(
+                      title: '自定义域名',
+                      controller: _domains,
+                      hint: '多个用逗号分隔，如 www.cdnhjk.net,www.cdngwc.cc',
+                      onSave: (v) => _update(
+                        s.copyWith(
+                          customDomains: v
+                              .split(',')
+                              .map((e) => e.trim())
+                              .where((e) => e.isNotEmpty)
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.refresh),
+                  title: const Text('重新探测线路'),
+                  subtitle: Text(
+                    '当前：${AppServices.I.client.lineName}'
+                    '（共 ${AppServices.I.client.lineCount} 条线路）\n'
+                    '出现「连接被重置」时点这里换线路',
+                  ),
+                  isThreeLine: true,
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('正在探测…')),
+                    );
+                    try {
+                      await AppServices.I.client.reprobe();
+                      if (!mounted) return;
+                      setState(() {});
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('已切到 ${AppServices.I.client.lineName}'),
+                        ),
+                      );
+                    } on Exception catch (e) {
+                      messenger.showSnackBar(SnackBar(content: Text('$e')));
+                    }
                   },
                 ),
-              ),
-            ),
-            _tile(
-              icon: Icons.dns_outlined,
-              title: '自定义域名',
-              subtitle: s.customDomains.isEmpty
-                  ? '自动选择（推荐）'
-                  : s.customDomains.join(', '),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editText(
-                  title: '自定义域名',
-                  controller: _domains,
-                  hint: '多个用逗号分隔，如 www.cdnhjk.net,www.cdngwc.cc',
-                  onSave: (v) => _update(
-                    s.copyWith(
-                      customDomains: v
-                          .split(',')
-                          .map((e) => e.trim())
-                          .where((e) => e.isNotEmpty)
-                          .toList(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('重新探测线路'),
-              subtitle: Text(
-                '当前：${AppServices.I.client.lineName}'
-                '（共 ${AppServices.I.client.lineCount} 条线路）\n'
-                '出现「连接被重置」时点这里换线路',
-              ),
-              isThreeLine: true,
-              onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                messenger.showSnackBar(const SnackBar(content: Text('正在探测…')));
-                try {
-                  await AppServices.I.client.reprobe();
-                  if (!mounted) return;
-                  setState(() {});
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('已切到 ${AppServices.I.client.lineName}'),
-                    ),
-                  );
-                } on Exception catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text('$e')));
-                }
-              },
+              ],
             ),
 
-            _section('Pixiv'),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Pixiv 走的是第三方镜像'),
-              subtitle: const Text(
-                '官方接口和图片站国内都连不上，所以数据走公共镜像、图片走公共反代。'
-                '这些都是别人免费提供的服务，哪天挂了就得换一个——'
-                '下面两项留空就用内置的那一串，连不上会挨个自动试。',
-              ),
-              isThreeLine: true,
-            ),
-            _tile(
-              icon: Icons.cloud_outlined,
-              title: '数据镜像地址',
-              subtitle: s.pixivApiBase.trim().isEmpty
-                  ? '内置 ${PixivConst.defaultApiBases.length} 个（api.cocomi.eu.org 等）'
-                  : s.pixivApiBase.trim(),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editText(
+            ExpansionTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('Pixiv 镜像设置'),
+              subtitle: const Text('数据镜像、图片反代和下载画质'),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('Pixiv 走的是第三方镜像'),
+                  subtitle: const Text(
+                    '官方接口和图片站国内都连不上，所以数据走公共镜像、图片走公共反代。'
+                    '这些都是别人免费提供的服务，哪天挂了就得换一个——'
+                    '下面两项留空就用内置的那一串，连不上会挨个自动试。',
+                  ),
+                  isThreeLine: true,
+                ),
+                _tile(
+                  icon: Icons.cloud_outlined,
                   title: '数据镜像地址',
-                  controller: _pixivApi,
-                  hint: '多个用逗号分隔，如 https://api.cocomi.eu.org',
-                  maxLines: 3,
-                  onSave: (v) => _update(s.copyWith(pixivApiBase: v.trim())),
+                  subtitle: s.pixivApiBase.trim().isEmpty
+                      ? '内置 ${PixivConst.defaultApiBases.length} 个（api.cocomi.eu.org 等）'
+                      : s.pixivApiBase.trim(),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editText(
+                      title: '数据镜像地址',
+                      controller: _pixivApi,
+                      hint: '多个用逗号分隔，如 https://api.cocomi.eu.org',
+                      maxLines: 3,
+                      onSave: (v) =>
+                          _update(s.copyWith(pixivApiBase: v.trim())),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            _tile(
-              icon: Icons.image_outlined,
-              title: '图片反代域名',
-              subtitle: s.pixivImageProxy.trim().isEmpty
-                  ? '内置 ${PixivConst.defaultImageProxies.length} 个（i.pixiv.re 等）'
-                  : s.pixivImageProxy.trim(),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editText(
+                _tile(
+                  icon: Icons.image_outlined,
                   title: '图片反代域名',
-                  controller: _pixivProxy,
-                  hint: '只填域名，多个用逗号分隔，如 i.pixiv.re,i.pixiv.nl',
-                  maxLines: 3,
-                  onSave: (v) => _update(s.copyWith(pixivImageProxy: v.trim())),
+                  subtitle: s.pixivImageProxy.trim().isEmpty
+                      ? '内置 ${PixivConst.defaultImageProxies.length} 个（i.pixiv.re 等）'
+                      : s.pixivImageProxy.trim(),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editText(
+                      title: '图片反代域名',
+                      controller: _pixivProxy,
+                      hint: '只填域名，多个用逗号分隔，如 i.pixiv.re,i.pixiv.nl',
+                      maxLines: 3,
+                      onSave: (v) =>
+                          _update(s.copyWith(pixivImageProxy: v.trim())),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            _tile(
-              icon: Icons.high_quality_outlined,
-              title: '下载画质',
-              subtitle: s.pixivQuality == PixivParsing.qualityLarge
-                  ? '1200px 那一档，体积小很多，手机上基本看不出差别'
-                  : '原图，一张两三兆，一话几十张会比较占地方',
-              trailing: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: PixivParsing.qualityOriginal,
-                    label: Text('原图'),
+                _tile(
+                  icon: Icons.high_quality_outlined,
+                  title: '下载画质',
+                  subtitle: s.pixivQuality == PixivParsing.qualityLarge
+                      ? '1200px 那一档，体积小很多，手机上基本看不出差别'
+                      : '原图，一张两三兆，一话几十张会比较占地方',
+                  trailing: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: PixivParsing.qualityOriginal,
+                        label: Text('原图'),
+                      ),
+                      ButtonSegment(
+                        value: PixivParsing.qualityLarge,
+                        label: Text('1200px'),
+                      ),
+                    ],
+                    selected: {s.pixivQuality},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (v) =>
+                        _update(s.copyWith(pixivQuality: v.first)),
                   ),
-                  ButtonSegment(
-                    value: PixivParsing.qualityLarge,
-                    label: Text('1200px'),
+                ),
+              ],
+            ),
+            ExpansionTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Rule34 / SankakuBlack'),
+              subtitle: const Text('API Key、网页版和视频结果说明'),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('两个图站源'),
+                  subtitle: const Text(
+                    'Rule34 不填 Key 也能搜（走网页版，国内多数网络要挂梯子）；'
+                    '填了免费 API Key 会换成官方接口，更快更稳。SankakuBlack 免登录。'
+                    '两边搜到的视频都会标出来，但不能下载或内置播放，'
+                    '可以到详情页打开原站观看。',
                   ),
-                ],
-                selected: {s.pixivQuality},
-                showSelectedIcon: false,
-                onSelectionChanged: (v) =>
-                    _update(s.copyWith(pixivQuality: v.first)),
-              ),
-            ),
-
-            _section('Rule34 / SankakuBlack'),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('两个图站源'),
-              subtitle: const Text(
-                'Rule34 不填 Key 也能搜（走网页版，国内多数网络要挂梯子）；'
-                '填了免费 API Key 会换成官方接口，更快更稳。SankakuBlack 免登录。'
-                '两边搜到的视频都会标出来，但不能下载或内置播放，'
-                '可以到详情页打开原站观看。',
-              ),
-              isThreeLine: true,
-            ),
-            _tile(
-              icon: Icons.key_outlined,
-              title: 'Rule34 API Key',
-              subtitle: s.rule34ApiKey.trim().isEmpty
-                  ? '可不填：留空走网页版；填了走官方接口'
-                  : '已填写（${s.rule34ApiKey.trim().length} 位）',
-              trailing: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _editText(
+                  isThreeLine: true,
+                ),
+                _tile(
+                  icon: Icons.key_outlined,
                   title: 'Rule34 API Key',
-                  controller: _rule34Key,
-                  hint: '可留空；到 api.rule34.xxx 免费申请后也可填这里',
-                  onSave: (v) => _update(s.copyWith(rule34ApiKey: v.trim())),
+                  subtitle: s.rule34ApiKey.trim().isEmpty
+                      ? '可不填：留空走网页版；填了走官方接口'
+                      : '已填写（${s.rule34ApiKey.trim().length} 位）',
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editText(
+                      title: 'Rule34 API Key',
+                      controller: _rule34Key,
+                      hint: '可留空；到 api.rule34.xxx 免费申请后也可填这里',
+                      onSave: (v) =>
+                          _update(s.copyWith(rule34ApiKey: v.trim())),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
 
-            _section('阅读'),
+            _section('阅读与分享'),
             // 电脑上没有音量键，翻页用方向键 / 空格（见阅读器里的说明）
             if (!PlatformService.isDesktop)
               SwitchListTile(
@@ -458,7 +501,61 @@ class _SettingsPageState extends State<SettingsPage>
               onChanged: (v) => _update(s.copyWith(showCoverInList: v)),
             ),
 
-            _section('追更'),
+            SwitchListTile(
+              secondary: const Icon(Icons.lock_outline),
+              title: const Text('导出的 PDF 带密码'),
+              subtitle: const Text(
+                '分享本地本子时生成加密 PDF，收到的人需要输入密码才能打开；'
+                '密码只保存在本机',
+              ),
+              value: s.sharePdfWithPassword,
+              onChanged: (v) async {
+                await _update(s.copyWith(sharePdfWithPassword: v));
+                if (v && s.sharePdfPassword.trim().isEmpty && mounted) {
+                  await _editText(
+                    title: '设置 PDF 打开密码',
+                    controller: _sharePassword,
+                    hint: '输入分享时使用的密码',
+                    obscureText: true,
+                    onSave: (value) =>
+                        _update(s.copyWith(sharePdfPassword: value)),
+                  );
+                }
+              },
+            ),
+            _tile(
+              icon: Icons.password_outlined,
+              title: 'PDF 打开密码',
+              subtitle: s.sharePdfPassword.trim().isEmpty
+                  ? '未设置；开启上面的开关后分享时会要求填写'
+                  : '已设置（本机保存）',
+              trailing: IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => _editText(
+                  title: 'PDF 打开密码',
+                  controller: _sharePassword,
+                  hint: '留空表示下次分享时再填写',
+                  obscureText: true,
+                  onSave: (value) =>
+                      _update(s.copyWith(sharePdfPassword: value.trim())),
+                ),
+              ),
+            ),
+
+            _section('通知与追更'),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('通知权限'),
+              subtitle: const Text('用于显示下载进度与完成提醒'),
+              onTap: () async {
+                final ok = await NotificationService.instance
+                    .requestPermission();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(ok ? '已获得通知权限' : '未获得通知权限')),
+                );
+              },
+            ),
             SwitchListTile(
               secondary: const Icon(Icons.notifications_active_outlined),
               title: const Text('后台检查更新'),
@@ -678,39 +775,6 @@ class _SettingsPageState extends State<SettingsPage>
               onChanged: AppServices.I.setEhUseEx,
             ),
 
-            _section('权限与通知'),
-            ListTile(
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('通知权限'),
-              subtitle: const Text('用于显示下载进度与完成提醒'),
-              onTap: () async {
-                final ok = await NotificationService.instance
-                    .requestPermission();
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(ok ? '已获得通知权限' : '未获得通知权限')),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.storage_outlined),
-              title: const Text('存储权限'),
-              subtitle: Text(
-                _storageGranted
-                    ? '已获得「所有文件访问」，可存到手机公共目录'
-                    : '未获得，下载会存到应用私有目录（文件管理器不易查看）',
-              ),
-              onTap: () async {
-                if (!_storageGranted) {
-                  await PlatformService.requestAllFilesAccess();
-                }
-                await Future<void>.delayed(const Duration(milliseconds: 400));
-                _storageGranted = await PlatformService.hasAllFilesAccess();
-                await AppServices.I.refreshRoot();
-                if (mounted) setState(() {});
-              },
-            ),
-
             _section('更新'),
             SwitchListTile(
               secondary: const Icon(Icons.system_update_alt),
@@ -745,34 +809,6 @@ class _SettingsPageState extends State<SettingsPage>
                 messenger.showSnackBar(const SnackBar(content: Text('正在检查…')));
                 final result = await AppServices.I.checkAppUpdate(manual: true);
                 messenger.showSnackBar(SnackBar(content: Text(result)));
-              },
-            ),
-
-            _section('关于'),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text(AppInfo.name),
-              subtitle: Text(
-                '${AppInfo.fullVersionText}\n'
-                '当前线路：${AppServices.I.client.lineName}\n'
-                '仅供个人学习使用',
-              ),
-              isThreeLine: true,
-            ),
-            ListTile(
-              leading: const Icon(Icons.groups_outlined),
-              title: const Text('交流群'),
-              subtitle: const Text('1077681089　279654219\n欢迎进来分享交流'),
-              isThreeLine: true,
-              trailing: const Icon(Icons.copy_outlined, size: 18),
-              onTap: () async {
-                await Clipboard.setData(
-                  const ClipboardData(text: '1077681089、279654219'),
-                );
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('群号已复制：1077681089、279654219')),
-                );
               },
             ),
           ],
@@ -1026,6 +1062,7 @@ class _SettingsPageState extends State<SettingsPage>
     required String hint,
     required ValueChanged<String> onSave,
     int maxLines = 1,
+    bool obscureText = false,
   }) async {
     final result = await showDialog<String>(
       context: context,
@@ -1035,6 +1072,7 @@ class _SettingsPageState extends State<SettingsPage>
           controller: controller,
           autofocus: true,
           maxLines: maxLines,
+          obscureText: obscureText,
           decoration: InputDecoration(hintText: hint),
         ),
         actions: [

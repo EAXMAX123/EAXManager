@@ -23,6 +23,8 @@ class AppSettings {
     this.maxConcurrentImages = 5,
     this.jpegQuality = 95,
     this.volumeKeyPageTurn = true,
+    this.sharePdfWithPassword = false,
+    this.sharePdfPassword = '',
     this.showCoverInList = true,
     this.themeMode = 'system',
     this.themeSeed = 0xFFE91E63,
@@ -97,6 +99,12 @@ class AppSettings {
 
   /// 阅读器是否支持音量键翻页
   final bool volumeKeyPageTurn;
+
+  /// 分享的 PDF 是否加打开密码
+  final bool sharePdfWithPassword;
+
+  /// PDF 打开密码，只保存在本机
+  final String sharePdfPassword;
 
   /// 阅读时保持屏幕常亮
 
@@ -185,6 +193,8 @@ class AppSettings {
     int? maxConcurrentImages,
     int? jpegQuality,
     bool? volumeKeyPageTurn,
+    bool? sharePdfWithPassword,
+    String? sharePdfPassword,
     bool? showCoverInList,
     String? themeMode,
     int? themeSeed,
@@ -221,6 +231,8 @@ class AppSettings {
     maxConcurrentImages: maxConcurrentImages ?? this.maxConcurrentImages,
     jpegQuality: jpegQuality ?? this.jpegQuality,
     volumeKeyPageTurn: volumeKeyPageTurn ?? this.volumeKeyPageTurn,
+    sharePdfWithPassword: sharePdfWithPassword ?? this.sharePdfWithPassword,
+    sharePdfPassword: sharePdfPassword ?? this.sharePdfPassword,
     showCoverInList: showCoverInList ?? this.showCoverInList,
     themeMode: themeMode ?? this.themeMode,
     themeSeed: themeSeed ?? this.themeSeed,
@@ -260,6 +272,8 @@ class AppSettings {
     'maxConcurrentImages': maxConcurrentImages,
     'jpegQuality': jpegQuality,
     'volumeKeyPageTurn': volumeKeyPageTurn,
+    'sharePdfWithPassword': sharePdfWithPassword,
+    'sharePdfPassword': sharePdfPassword,
     'showCoverInList': showCoverInList,
     'themeMode': themeMode,
     'themeSeed': themeSeed,
@@ -300,6 +314,8 @@ class AppSettings {
     maxConcurrentImages: json['maxConcurrentImages'] as int? ?? 5,
     jpegQuality: json['jpegQuality'] as int? ?? 95,
     volumeKeyPageTurn: json['volumeKeyPageTurn'] as bool? ?? true,
+    sharePdfWithPassword: json['sharePdfWithPassword'] as bool? ?? false,
+    sharePdfPassword: json['sharePdfPassword'] as String? ?? '',
     showCoverInList: json['showCoverInList'] as bool? ?? true,
     themeMode: json['themeMode'] as String? ?? 'system',
     themeSeed: json['themeSeed'] as int? ?? 0xFFE91E63,

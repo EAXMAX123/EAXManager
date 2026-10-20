@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../jm/jm_storage.dart';
+import '../../services/image_aspect.dart';
 import '../../services/local_library.dart';
 import '../../services/platform_service.dart';
 import '../../services/reading_progress_writer.dart';
@@ -43,14 +44,19 @@ class ReaderPage extends StatefulWidget {
 
 class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   final ScrollController _scroll = ScrollController();
-  final List<GlobalKey> _keys = [];
 
   List<File> _files = const [];
+  List<double> _ratios = const [];
+  List<double> _heights = const [];
+  List<double> _startOffsets = const [];
+  double _metricsWidth = 0;
   bool _loading = true;
   String? _error;
   bool _showOverlay = true;
 
   int _currentIndex = 0;
+  int _targetIndex = 0;
+  bool _pageAnimating = false;
   Timer? _saveThrottle;
   int _initialIndex = 0;
   bool _switching = false;
@@ -144,18 +150,25 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       return;
     }
 
+    // 先读尺寸再进列表：图片高度固定下来，滚动时 Sliver 不会因为
+    // 图片解码先后而反复改高度，页码也就不会突然乱跳。
+    final ratios = await ImageAspect.ratios(files);
+    if (!mounted) return;
+
     final saved = await AppServices.I.dao.getBookshelf(widget.sid);
     if (!mounted) return;
     _initialIndex = saved != null && saved.lastChapter == widget.chapterIndex
         ? (saved.lastPage - 1).clamp(0, files.length - 1)
         : 0;
     _currentIndex = _initialIndex;
-    _keys
-      ..clear()
-      ..addAll(List.generate(files.length, (_) => GlobalKey()));
+    _targetIndex = _initialIndex;
+    _metricsWidth = 0;
+    _heights = const [];
+    _startOffsets = const [];
 
     setState(() {
       _files = files;
+      _ratios = ratios;
       _loading = false;
     });
   }
@@ -181,11 +194,56 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   /// 翻页：direction 为 +1 往下（下一页），-1 往上
   void _page(int direction) {
-    if (!mounted || !_scroll.hasClients) return;
+    if (!mounted || !_scroll.hasClients || _files.isEmpty) return;
     if (ModalRoute.of(context)?.isCurrent != true) return;
 
-    final step = _scroll.position.viewportDimension * 0.92;
-    _scrollTo(_scroll.offset + direction * step);
+    if (_startOffsets.length != _files.length) {
+      _ensureMetrics(MediaQuery.sizeOf(context).width);
+    }
+    if (_startOffsets.length != _files.length) return;
+
+    // 动画还没跑完时接着按，按「上一次的目标页」继续加，
+    // 不要拿还没滚到的当前位置当基准，否则连按会原地打转。
+    final base = _pageAnimating ? _targetIndex : _currentIndex;
+    var target = (base + direction).clamp(0, _files.length - 1);
+
+    // 一页比屏幕高的时候，先回到本页顶部，再按才翻到上一页。
+    if (direction < 0 && !_pageAnimating) {
+      final pageStart = _startOffsets[_currentIndex];
+      if (_scroll.offset - pageStart >
+          _scroll.position.viewportDimension * 0.08) {
+        target = _currentIndex;
+      }
+    }
+
+    if (_pageAnimating && target == _targetIndex) return;
+    _targetIndex = target;
+    if (!_pageAnimating) unawaited(_animateToTargetPage());
+  }
+
+  Future<void> _animateToTargetPage() async {
+    _pageAnimating = true;
+    try {
+      while (mounted && _scroll.hasClients) {
+        final target = _targetIndex.clamp(0, _startOffsets.length - 1);
+        final offset = _startOffsets[target].clamp(
+          _scroll.position.minScrollExtent,
+          _scroll.position.maxScrollExtent,
+        );
+        if (MediaQuery.disableAnimationsOf(context)) {
+          _scroll.jumpTo(offset);
+        } else {
+          await _scroll.animateTo(
+            offset,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        if (!mounted || _targetIndex == target) break;
+      }
+    } finally {
+      _pageAnimating = false;
+    }
   }
 
   void _scrollTo(double target) {
@@ -222,10 +280,12 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.home) {
+      _targetIndex = 0;
       if (_scroll.hasClients) _scrollTo(_scroll.position.minScrollExtent);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.end) {
+      if (_files.isNotEmpty) _targetIndex = _files.length - 1;
       if (_scroll.hasClients) _scrollTo(_scroll.position.maxScrollExtent);
       return KeyEventResult.handled;
     }
@@ -278,23 +338,60 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   void _onScroll() {
     if (!_scroll.hasClients || _switching) return;
-
-    // 找出当前位于视口顶部的图片
-    for (var i = 0; i < _keys.length; i++) {
-      final ctx = _keys[i].currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize) continue;
-      final top = box.localToGlobal(Offset.zero).dy;
-      if (top <= 1 && top + box.size.height > 1) {
-        if (_currentIndex != i) setState(() => _currentIndex = i);
-        break;
-      }
-    }
+    _syncCurrentFromOffset();
 
     // 节流保存进度
     _saveThrottle?.cancel();
     _saveThrottle = Timer(const Duration(milliseconds: 600), _saveProgress);
+  }
+
+  /// 用固定的页面起始偏移算当前页，不再依赖 GlobalKey 的屏幕坐标
+  void _syncCurrentFromOffset() {
+    if (_startOffsets.length != _files.length || _startOffsets.isEmpty) return;
+
+    final offset = _scroll.offset;
+    var low = 0;
+    var high = _startOffsets.length - 1;
+    var found = 0;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (_startOffsets[mid] <= offset + 0.5) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    if (_currentIndex != found) setState(() => _currentIndex = found);
+  }
+
+  /// 按屏幕宽度把高宽比换成像素高度，并算出每页的起始偏移
+  void _ensureMetrics(double width) {
+    if (_files.isEmpty) return;
+    if ((_metricsWidth - width).abs() < 0.5 &&
+        _startOffsets.length == _files.length) {
+      return;
+    }
+
+    _metricsWidth = width;
+    final heights = List<double>.generate(_files.length, (index) {
+      final ratio = index < _ratios.length
+          ? _ratios[index]
+          : ImageAspect.fallback;
+      return (width * ratio).clamp(80.0, 20000.0);
+    });
+
+    final starts = List<double>.filled(_files.length, 0);
+    final initial = _initialIndex.clamp(0, _files.length - 1);
+    for (var i = initial - 1; i >= 0; i--) {
+      starts[i] = starts[i + 1] - heights[i];
+    }
+    for (var i = initial + 1; i < _files.length; i++) {
+      starts[i] = starts[i - 1] + heights[i - 1];
+    }
+
+    _heights = heights;
+    _startOffsets = starts;
   }
 
   Future<void> _saveProgress() async {
@@ -400,22 +497,39 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+    _ensureMetrics(width);
+    final decodeWidth = (width * MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(360, 1440);
+
     return ReadingStrip(
       controller: _scroll,
       initialIndex: _initialIndex,
       itemCount: _files.length,
+      itemExtentBuilder: (index) =>
+          index < _heights.length ? _heights[index] : null,
       itemBuilder: (context, index) {
-        return GestureDetector(
-          key: _keys[index],
-          onTap: () => _openZoom(index),
-          child: Image.file(
-            _files[index],
-            fit: BoxFit.fitWidth,
-            width: double.infinity,
-            errorBuilder: (_, _, _) => const SizedBox(
-              height: 200,
-              child: Center(
-                child: Text('图片损坏', style: TextStyle(color: Colors.white54)),
+        final height = index < _heights.length
+            ? _heights[index]
+            : width * ImageAspect.fallback;
+        return SizedBox(
+          height: height,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openZoom(index),
+            child: Image.file(
+              _files[index],
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: height,
+              cacheWidth: decodeWidth,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => const Center(
+                child: Text(
+                  '图片损坏',
+                  style: TextStyle(color: Colors.white54),
+                ),
               ),
             ),
           ),
@@ -498,6 +612,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                   setState(() {
                     _initialIndex = 0;
                     _currentIndex = 0;
+                    _targetIndex = 0;
+                    _metricsWidth = 0;
                   });
                   _scroll.jumpTo(0);
                   unawaited(_saveProgress());

@@ -93,6 +93,13 @@ class AppServices {
   /// 检查到的新版本；界面看到有值就弹窗提示
   final ValueNotifier<AppUpdate?> pendingUpdate = ValueNotifier(null);
 
+  /// 本地 PDF 打包记录有变化时自增，详情页和书架靠它刷新
+  final ValueNotifier<int> pdfPackagesRevision = ValueNotifier(0);
+
+  void notifyPdfPackagesChanged() {
+    pdfPackagesRevision.value++;
+  }
+
   /// 系统里是否挂着 VPN；「绕过 DNS 污染」的自动模式靠它决定要不要自己指定 IP
   bool vpnActive = false;
 

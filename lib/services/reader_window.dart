@@ -213,9 +213,15 @@ class _ReaderWindowKeeper with WindowListener {
     final prefs = await SharedPreferences.getInstance();
     final size = await windowManager.getSize();
     final position = await windowManager.getPosition();
-    await prefs.setDouble('readerWindowWidth', size.width);
-    await prefs.setDouble('readerWindowHeight', size.height);
-    await prefs.setDouble('readerWindowLeft', position.dx);
-    await prefs.setDouble('readerWindowTop', position.dy);
+    // 最小化时窗口会被挪到 -32000，尺寸也不可信；跳过这种值，
+    // 否则下次打开阅读窗口会直接跑到屏幕外。
+    if (size.width >= 300 && size.height >= 300) {
+      await prefs.setDouble('readerWindowWidth', size.width);
+      await prefs.setDouble('readerWindowHeight', size.height);
+    }
+    if (position.dx > -10000 && position.dy > -10000) {
+      await prefs.setDouble('readerWindowLeft', position.dx);
+      await prefs.setDouble('readerWindowTop', position.dy);
+    }
   }
 }

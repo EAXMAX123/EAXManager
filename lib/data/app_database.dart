@@ -4,6 +4,8 @@
 /// 避免 JM 和 EH 这种纯数字 ID 互相撞车。
 ///
 /// v3 起：下载任务记录实际落盘目录（`dir_path`），并加入书架分类表。
+/// v5 起：记录本地打包好的 PDF，详情页和书架都能直接复用。
+/// v6 起：PDF 记录附带密码配置，密码改过就不会误发旧文件。
 library;
 
 import 'dart:async';
@@ -31,7 +33,7 @@ class AppDatabase {
     final path = p.join(dir, 'jm_reader.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 6,
       // 电脑上主窗口和阅读窗口是两个进程，共用这一份数据库文件。
       // 撞上对方正在写的时候多等一会儿，别直接报「数据库被锁」。
       // PRAGMA 会返回结果行，Android 上的 sqflite 不允许用 execute 执行，
@@ -44,6 +46,8 @@ class AppDatabase {
         if (oldVersion < 2) await _migrateV1ToV2(db);
         if (oldVersion < 3) await _migrateV2ToV3(db);
         if (oldVersion < 4) await _migrateV3ToV4(db);
+        if (oldVersion < 5) await _migrateV4ToV5(db);
+        if (oldVersion < 6) await _migrateV5ToV6(db);
       },
     );
   }
@@ -127,6 +131,7 @@ class AppDatabase {
     ''');
 
     await _createCategoryTables(db);
+    await _createPdfPackageTable(db);
   }
 
   /// 书架分类：分类表 + 本子与分类的关联表
@@ -178,6 +183,47 @@ class AppDatabase {
         'ALTER TABLE download_task ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
       );
     }
+  }
+
+  /// v4 -> v5：记录打包好的本地 PDF
+  static Future<void> _migrateV4ToV5(Database db) async {
+    await _createPdfPackageTable(db);
+  }
+
+  /// v5 -> v6：记下这份 PDF 当初有没有加密码
+  ///
+  /// 老记录不知道当时加没加，统一标成 unknown；第一次分享会重新生成一次，
+  /// 之后就能正常复用了。
+  static Future<void> _migrateV5ToV6(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(pdf_package)');
+    final hasPasswordSig = columns.any((c) => c['name'] == 'password_sig');
+    if (!hasPasswordSig) {
+      await db.execute(
+        "ALTER TABLE pdf_package ADD COLUMN password_sig TEXT NOT NULL DEFAULT 'unknown'",
+      );
+    }
+  }
+
+  static Future<void> _createPdfPackageTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pdf_package (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        source       TEXT NOT NULL DEFAULT 'jm',
+        album_id     TEXT NOT NULL,
+        title        TEXT NOT NULL DEFAULT '',
+        chapter_key  TEXT NOT NULL,
+        file_path    TEXT NOT NULL,
+        page_count   INTEGER NOT NULL DEFAULT 0,
+        size_bytes   INTEGER NOT NULL DEFAULT 0,
+        password_sig TEXT NOT NULL DEFAULT '',
+        created_at   INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(source, album_id, chapter_key)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pdf_package_album '
+      'ON pdf_package(source, album_id)',
+    );
   }
 
   /// v1 -> v2：加 source 列、主键改复合。老数据全部归到 jm 源，不丢书。
@@ -278,6 +324,65 @@ class BookshelfItem {
     lastReadAt: row['last_read_at'] as int? ?? 0,
     createdAt: row['created_at'] as int? ?? 0,
   );
+}
+
+/// 一份已经生成好的本地 PDF
+class PdfPackageItem {
+  const PdfPackageItem({
+    required this.id,
+    required this.source,
+    required this.albumId,
+    required this.title,
+    required this.chapters,
+    required this.filePath,
+    required this.pageCount,
+    required this.sizeBytes,
+    required this.passwordSig,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String source;
+  final String albumId;
+  final String title;
+
+  /// 这份 PDF 包含的章节序号，升序
+  final List<int> chapters;
+  final String filePath;
+  final int pageCount;
+  final int sizeBytes;
+
+  /// 生成时密码配置的指纹，空字符串表示没加密码
+  final String passwordSig;
+  final int createdAt;
+
+  SourceId get sid => SourceId(source, albumId);
+
+  /// 章节组合的唯一键，用来判断同一次选择是不是已经打包过
+  String get chapterKey => ([...chapters]..sort()).join(',');
+
+  factory PdfPackageItem.fromRow(Map<String, Object?> row) {
+    final chapters =
+        (row['chapter_key'] as String? ?? '')
+            .split(',')
+            .where((value) => value.trim().isNotEmpty)
+            .map(int.tryParse)
+            .whereType<int>()
+            .toList()
+          ..sort();
+    return PdfPackageItem(
+      id: row['id'] as int,
+      source: row['source'] as String? ?? 'jm',
+      albumId: row['album_id'] as String,
+      title: row['title'] as String? ?? '',
+      chapters: chapters,
+      filePath: row['file_path'] as String? ?? '',
+      pageCount: row['page_count'] as int? ?? 0,
+      sizeBytes: row['size_bytes'] as int? ?? 0,
+      passwordSig: row['password_sig'] as String? ?? '',
+      createdAt: row['created_at'] as int? ?? 0,
+    );
+  }
 }
 
 /// 下载任务状态
@@ -750,6 +855,113 @@ class AppDao {
       where: 'source = ? AND album_id = ?',
       whereArgs: [sid.source, sid.id],
     );
+  }
+
+  // ==================== 本地 PDF ====================
+
+  Future<PdfPackageItem?> findPdfPackage(
+    SourceId sid,
+    List<int> chapters, {
+    String? passwordSig,
+  }) async {
+    final key = ([...chapters]..sort()).join(',');
+    if (key.isEmpty) return null;
+    final db = await _db.database;
+    final rows = await db.query(
+      'pdf_package',
+      where: 'source = ? AND album_id = ? AND chapter_key = ?',
+      whereArgs: [sid.source, sid.id, key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final item = PdfPackageItem.fromRow(rows.first);
+    if (passwordSig != null && item.passwordSig != passwordSig) return null;
+    return item;
+  }
+
+  Future<PdfPackageItem> upsertPdfPackage({
+    required SourceId sid,
+    required String title,
+    required List<int> chapters,
+    required String filePath,
+    required int pageCount,
+    required int sizeBytes,
+    required String passwordSig,
+  }) async {
+    final sorted = [...chapters]..sort();
+    final key = sorted.join(',');
+    final db = await _db.database;
+    final values = {
+      'source': sid.source,
+      'album_id': sid.id,
+      'title': title,
+      'chapter_key': key,
+      'file_path': filePath,
+      'page_count': pageCount,
+      'size_bytes': sizeBytes,
+      'password_sig': passwordSig,
+      'created_at': _now(),
+    };
+    final existing = await db.query(
+      'pdf_package',
+      columns: ['id'],
+      where: 'source = ? AND album_id = ? AND chapter_key = ?',
+      whereArgs: [sid.source, sid.id, key],
+      limit: 1,
+    );
+
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as int;
+      await db.update('pdf_package', values, where: 'id = ?', whereArgs: [id]);
+      return PdfPackageItem(
+        id: id,
+        source: sid.source,
+        albumId: sid.id,
+        title: title,
+        chapters: sorted,
+        filePath: filePath,
+        pageCount: pageCount,
+        sizeBytes: sizeBytes,
+        passwordSig: passwordSig,
+        createdAt: values['created_at'] as int,
+      );
+    }
+
+    final id = await db.insert('pdf_package', values);
+    return PdfPackageItem(
+      id: id,
+      source: sid.source,
+      albumId: sid.id,
+      title: title,
+      chapters: sorted,
+      filePath: filePath,
+      pageCount: pageCount,
+      sizeBytes: sizeBytes,
+      passwordSig: passwordSig,
+      createdAt: values['created_at'] as int,
+    );
+  }
+
+  Future<List<PdfPackageItem>> listPdfPackages() async {
+    final db = await _db.database;
+    final rows = await db.query('pdf_package', orderBy: 'created_at DESC');
+    return rows.map(PdfPackageItem.fromRow).toList();
+  }
+
+  Future<List<PdfPackageItem>> listPdfPackagesByAlbum(SourceId sid) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'pdf_package',
+      where: 'source = ? AND album_id = ?',
+      whereArgs: [sid.source, sid.id],
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(PdfPackageItem.fromRow).toList();
+  }
+
+  Future<void> deletePdfPackage(int id) async {
+    final db = await _db.database;
+    await db.delete('pdf_package', where: 'id = ?', whereArgs: [id]);
   }
 
   // ==================== 书架分类 ====================

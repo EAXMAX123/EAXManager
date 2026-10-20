@@ -35,7 +35,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('已更新到 v${AppInfo.version}'), findsOneWidget);
-    expect(find.text('新增'), findsOneWidget);
+    if (entry.features.isNotEmpty) {
+      expect(find.text('新增'), findsOneWidget);
+    }
+    if (entry.fixes.isNotEmpty) {
+      expect(find.text('修复'), findsOneWidget);
+    }
 
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();

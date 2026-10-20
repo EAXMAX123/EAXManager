@@ -193,9 +193,7 @@ class _RootShellState extends State<RootShell> {
     // 设置了背景图时才把页面背景透明化去透出底图；
     // 否则保持主题底色，避免露出 Android 窗口背景（深色模式下是纯黑）
     final settingsNow = AppServices.I.settings.value;
-    final hasImage = AppTheme.hasBackgroundImage(
-      settingsNow.backgroundColor,
-    );
+    final hasImage = AppTheme.hasBackgroundImage(settingsNow.backgroundColor);
     // 电脑上窗口是横着的，导航放左边比压在底下顺手，也能少占一条边
     final wide = MediaQuery.sizeOf(context).width >= 900;
 

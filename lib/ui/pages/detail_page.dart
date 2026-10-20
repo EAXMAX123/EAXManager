@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_database.dart';
 import '../../jm/jm_storage.dart';
 import '../../services/local_library.dart';
+import '../../services/pdf_share_service.dart';
 import '../../services/platform_service.dart';
 import '../../source/comic_source.dart';
 import '../../state/app_services.dart';
@@ -31,6 +32,10 @@ class _DetailPageState extends State<DetailPage> {
   bool _subscribed = false;
   bool? _favorite;
   bool _favoriteBusy = false;
+  bool _offline = false;
+  bool _sharing = false;
+  int _shareDone = 0;
+  int _shareTotal = 0;
 
   /// 本地真有图的章节序号
   ///
@@ -41,21 +46,46 @@ class _DetailPageState extends State<DetailPage> {
   /// 本地封面（本子目录里第一张图）
   String _localCover = '';
 
+  /// 这本书已经打包好的本地 PDF
+  List<PdfPackageItem> _pdfPackages = const [];
+
   @override
   void initState() {
     super.initState();
     _load();
     AppServices.I.downloads.addListener(_onDownloadsChanged);
+    AppServices.I.pdfPackagesRevision.addListener(_onPdfPackagesChanged);
   }
 
   @override
   void dispose() {
     AppServices.I.downloads.removeListener(_onDownloadsChanged);
+    AppServices.I.pdfPackagesRevision.removeListener(_onPdfPackagesChanged);
     super.dispose();
   }
 
   void _onDownloadsChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onPdfPackagesChanged() {
+    if (mounted) _refreshPackages();
+  }
+
+  Future<void> _refreshPackages() async {
+    final packages = await PdfShareService.packagesForAlbum(widget.sid);
+    if (!mounted) return;
+    setState(() => _pdfPackages = packages);
+  }
+
+  /// 本地全部章节是不是已经有一份完整的 PDF
+  bool get _allLocalPacked {
+    if (_localChapters.isEmpty || _pdfPackages.isEmpty) return false;
+    for (final item in _pdfPackages) {
+      if (item.chapters.length != _localChapters.length) continue;
+      if (item.chapters.every(_localChapters.contains)) return true;
+    }
+    return false;
   }
 
   ComicSource? get _source => AppServices.I.sources.byId(widget.sid);
@@ -81,6 +111,40 @@ class _DetailPageState extends State<DetailPage> {
       await _refreshLocal();
     } on Exception catch (e) {
       if (!mounted) return;
+
+      // 没网的时候也要能打开本地已下载的书：用本地章节拼一个详情页，
+      // 至少能阅读、加入书架和导出 PDF。
+      final local = await LocalLibrary.chapters(widget.sid);
+      if (!mounted) return;
+      if (local.isNotEmpty) {
+        final title = widget.title.trim().isEmpty
+            ? '本地漫画 ${widget.sid.id}'
+            : widget.title.trim();
+        setState(() {
+          _detail = ComicDetail(
+            sid: widget.sid,
+            title: title,
+            chapters: [
+              for (final index in local)
+                ComicChapter(
+                  id: 'local-$index',
+                  title: '第 $index 话',
+                  index: index,
+                  order: index,
+                ),
+            ],
+            isFavorite: null,
+            meta: const [MapEntry('来源', '本地已下载')],
+          );
+          _offline = true;
+          _localChapters = local.toSet();
+          _error = null;
+          _loading = false;
+        });
+        await _refreshLocal();
+        return;
+      }
+
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -306,9 +370,9 @@ class _DetailPageState extends State<DetailPage> {
                       '可以在原站打开观看。',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onTertiaryContainer,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onTertiaryContainer,
                       ),
                     ),
                   ),
@@ -332,21 +396,61 @@ class _DetailPageState extends State<DetailPage> {
             ),
           ),
         ] else ...[
+          if (_offline)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_off_outlined,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '当前没有连上网络，只显示本地已下载的章节',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _downloadAll,
-                    icon: const Icon(Icons.download),
-                    label: Text(
-                      isSingle ? '下载本子' : '下载全部（${chapters.length} 章）',
+                if (_offline)
+                  Expanded(
+                    child: Text(
+                      '本地共 ${_localChapters.length} 话',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _downloadAll,
+                      icon: const Icon(Icons.download),
+                      label: Text(
+                        isSingle ? '下载本子' : '下载全部（${chapters.length} 章）',
+                      ),
                     ),
                   ),
-                ),
                 // EH 的画廊就是固定的一话，没有「追更」这回事
-                if (widget.sid.source != 'eh') ...[
+                if (!_offline && widget.sid.source != 'eh') ...[
                   const SizedBox(width: 8),
                   IconButton.filledTonal(
                     onPressed: _toggleSubscribe,
@@ -360,7 +464,7 @@ class _DetailPageState extends State<DetailPage> {
                 ],
                 // isFavorite 为 null 表示这个源没有收藏接口（EH），不显示按钮，
                 // 免得点了之后弹「已加入收藏」但其实什么都没发生
-                if (detail.isFavorite != null) ...[
+                if (!_offline && detail.isFavorite != null) ...[
                   const SizedBox(width: 8),
                   IconButton.filledTonal(
                     onPressed: _favoriteBusy ? null : _toggleFavorite,
@@ -378,20 +482,357 @@ class _DetailPageState extends State<DetailPage> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _addToShelf,
-                icon: const Icon(Icons.bookmark_add_outlined),
-                label: const Text('加入书架'),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _addToShelf,
+                    icon: const Icon(Icons.bookmark_add_outlined),
+                    label: const Text('加入书架'),
+                  ),
+                ),
+                if (_localChapters.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _sharing ? null : _sharePdf,
+                      icon: _sharing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.picture_as_pdf_outlined),
+                      label: Text(_sharing ? '生成中' : '分享 PDF'),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
+          if (_pdfPackages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    size: 14,
+                    color: Color(0xFF2E7D32),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      _allLocalPacked
+                          ? '本地已打包！点击分享可直接发送，不会重新生成'
+                          : '本地已打包 ${_pdfPackages.length} 份，点分享可选择直接发送',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_sharing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LinearProgressIndicator(
+                    value: _shareTotal > 0 ? _shareDone / _shareTotal : null,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _shareTotal > 0
+                        ? '正在打包 $_shareDone / $_shareTotal 张图片'
+                        : '正在准备 PDF…',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
         ],
         const Divider(height: 1),
         for (final chapter in rows) _chapterTile(chapter),
       ],
     );
+  }
+
+  /// 把本地章节打成一个 PDF，再调系统分享面板
+  Future<void> _sharePdf() async {
+    if (_sharing || _detail == null) return;
+
+    final selected = await _pickShareChapters();
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final settings = AppServices.I.settings.value;
+    var password = settings.sharePdfPassword.trim();
+    if (settings.sharePdfWithPassword && password.isEmpty) {
+      final typed = await _askSharePassword();
+      if (typed == null || typed.trim().isEmpty) return;
+      password = typed.trim();
+    }
+    if (!settings.sharePdfWithPassword) password = '';
+
+    final ordered = selected.toList()..sort();
+
+    // 之前打包过一模一样的章节就直接发，不再重新拼一遍
+    final cached = await PdfShareService.findPackage(
+      sid: widget.sid,
+      chapterIndexes: ordered,
+      password: password,
+    );
+    if (!mounted) return;
+    if (cached != null) {
+      final shared = await PlatformService.shareFile(
+        path: cached.path,
+        title: cached.fileName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            shared
+                ? '已使用本地打包好的 PDF（${cached.pageCount} 页），没有重新生成'
+                : '本地 PDF 在：${cached.path}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _sharing = true;
+      _shareDone = 0;
+      _shareTotal = 0;
+    });
+
+    try {
+      final result = await PdfShareService.buildAlbumPdf(
+        sid: widget.sid,
+        title: _detail!.title,
+        chapterIndexes: ordered,
+        fileNameBase: _shareFileName(ordered),
+        password: password,
+        onProgress: (done, total) {
+          if (!mounted) return;
+          setState(() {
+            _shareDone = done;
+            _shareTotal = total;
+          });
+        },
+      );
+      if (!mounted) return;
+
+      final shared = await PlatformService.shareFile(
+        path: result.path,
+        title: result.fileName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            shared
+                ? 'PDF 已生成（${result.pageCount} 页），请在分享面板里选择 QQ、微信等'
+                : 'PDF 已生成（${result.pageCount} 页）：${result.path}',
+          ),
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  /// 选择要打包的章节；只有一话时不用弹面板
+  Future<Set<int>?> _pickShareChapters() async {
+    final local = await LocalLibrary.chapters(widget.sid);
+    if (!mounted) return null;
+    if (local.isEmpty) return null;
+    if (local.length == 1) return local.toSet();
+
+    final selected = <int>{};
+    return showModalBottomSheet<Set<int>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final allSelected = selected.length == local.length;
+          final packedSelection = _matchesPackedSelection(selected);
+          return SafeArea(
+            top: false,
+            child: SizedBox(
+              height: MediaQuery.sizeOf(ctx).height * 0.72,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '选择要分享的章节',
+                                style: Theme.of(ctx).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '本地共 ${local.length} 话，可多选',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setSheetState(() {
+                              if (allSelected) {
+                                selected.clear();
+                              } else {
+                                selected
+                                  ..clear()
+                                  ..addAll(local);
+                              }
+                            });
+                          },
+                          child: Text(allSelected ? '取消全选' : '全选'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: local.length,
+                      itemBuilder: (ctx, i) {
+                        final index = local[i];
+                        return CheckboxListTile(
+                          value: selected.contains(index),
+                          onChanged: (checked) {
+                            setSheetState(() {
+                              if (checked ?? false) {
+                                selected.add(index);
+                              } else {
+                                selected.remove(index);
+                              }
+                            });
+                          },
+                          title: Text(
+                            _chapterLabel(index),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          dense: true,
+                        );
+                      },
+                    ),
+                  ),
+                  if (packedSelection)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 6, 20, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '这组章节本地已打包，点下面会直接分享，不会重新生成',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => Navigator.pop(ctx, Set<int>.from(selected)),
+                        child: Text(
+                          selected.isEmpty
+                              ? '请选择章节'
+                              : packedSelection
+                              ? '分享已打包 PDF（已选 ${selected.length} 话）'
+                              : '生成 PDF（已选 ${selected.length} 话）',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  bool _matchesPackedSelection(Set<int> selected) {
+    if (selected.isEmpty) return false;
+    for (final item in _pdfPackages) {
+      if (item.chapters.length != selected.length) continue;
+      if (item.chapters.every(selected.contains)) return true;
+    }
+    return false;
+  }
+
+  String _chapterLabel(int index) {
+    for (final chapter in _detail?.chapters ?? const <ComicChapter>[]) {
+      if (chapter.index != index) continue;
+      final title = chapter.title.trim();
+      if (title.isNotEmpty) return title;
+    }
+    return '第 $index 话';
+  }
+
+  String _shareFileName(List<int> selected) {
+    final title = _detail!.title;
+    if (selected.length == 1) {
+      return '$title - ${_chapterLabel(selected.first)}';
+    }
+    if (selected.length < _localChapters.length) {
+      return '$title - 已选${selected.length}话';
+    }
+    return title;
+  }
+
+  Future<String?> _askSharePassword() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('输入 PDF 打开密码'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          decoration: const InputDecoration(hintText: '收到的人打开 PDF 时需要输入'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('开始生成'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value;
   }
 
   /// 把本子收进书架并挑选分类
@@ -442,6 +883,7 @@ class _DetailPageState extends State<DetailPage> {
   /// 看看本地到底有哪些话、封面用哪张
   Future<void> _refreshLocal() async {
     final chapters = await LocalLibrary.chapters(widget.sid);
+    final packages = await PdfShareService.packagesForAlbum(widget.sid);
 
     var cover = '';
     if (chapters.isNotEmpty) {
@@ -455,6 +897,7 @@ class _DetailPageState extends State<DetailPage> {
     setState(() {
       _localChapters = chapters.toSet();
       _localCover = cover;
+      _pdfPackages = packages;
     });
   }
 
@@ -489,6 +932,8 @@ class _DetailPageState extends State<DetailPage> {
                   ? null
                   : () => PlatformService.openUrl(detail.webUrl.trim()),
             )
+          : _offline
+          ? const Icon(Icons.check_circle, color: Colors.green)
           : _taskTrailing(task, detail, chapter),
     );
   }

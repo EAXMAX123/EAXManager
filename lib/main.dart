@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_info.dart';
+import 'services/desktop_window.dart';
 import 'services/reader_window.dart';
 import 'state/app_services.dart';
 import 'ui/app.dart';
@@ -234,7 +235,11 @@ Future<void> _setupDesktopWindow() async {
 
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();
-    await windowManager.setPosition(position ?? const Offset(60, 60));
+    // 上次可能是在最小化状态下关掉的，坐标会变成 -32000；
+    // 统一夹一次，保证窗口一定落在看得见的区域。
+    await windowManager.setPosition(
+      DesktopWindow.clampPosition(position ?? const Offset(60, 60), size),
+    );
     await windowManager.focus();
   });
 
@@ -291,9 +296,15 @@ class _DesktopWindowKeeper with WindowListener {
     final prefs = await SharedPreferences.getInstance();
     final size = await windowManager.getSize();
     final position = await windowManager.getPosition();
-    await prefs.setDouble('windowWidth', size.width);
-    await prefs.setDouble('windowHeight', size.height);
-    await prefs.setDouble('windowLeft', position.dx);
-    await prefs.setDouble('windowTop', position.dy);
+    // 最小化时窗口会被挪到 -32000，尺寸也只剩任务栏那一小条；
+    // 这种值存下来下次打开就看不见窗口了，直接跳过。
+    if (size.width >= 400 && size.height >= 300) {
+      await prefs.setDouble('windowWidth', size.width);
+      await prefs.setDouble('windowHeight', size.height);
+    }
+    if (position.dx > -10000 && position.dy > -10000) {
+      await prefs.setDouble('windowLeft', position.dx);
+      await prefs.setDouble('windowTop', position.dy);
+    }
   }
 }

@@ -10,10 +10,17 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.view.KeyEvent
+import androidx.core.content.FileProvider
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 /**
  * 主 Activity：
@@ -77,6 +84,27 @@ class MainActivity : FlutterActivity() {
 
                 "openUrl" -> {
                     result.success(openUrl(call.argument<String>("url") ?: ""))
+                }
+
+                "shareFile" -> {
+                    result.success(
+                        shareFile(
+                            call.argument<String>("path") ?: "",
+                            call.argument<String>("mimeType")
+                                ?: "application/octet-stream",
+                            call.argument<String>("title") ?: "分享",
+                        ),
+                    )
+                }
+
+                "protectPdf" -> {
+                    val input = call.argument<String>("input") ?: ""
+                    val output = call.argument<String>("output") ?: ""
+                    val password = call.argument<String>("password") ?: ""
+                    Thread {
+                        val ok = protectPdf(input, output, password)
+                        runOnUiThread { result.success(ok) }
+                    }.start()
                 }
 
                 else -> result.notImplemented()
@@ -160,6 +188,97 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             // 没有浏览器或链接不合法
             false
+        }
+    }
+
+    /**
+     * 系统分享面板：用 FileProvider 把文件临时授权给 QQ、微信等。
+     *
+     * 长期保存的 PDF 在下载目录里，不在 FileProvider 的 cache-path 下。
+     * 遇到这种路径时复制一份到 cache/share 再分享，原文件仍保留在下载目录。
+     */
+    private fun shareFile(path: String, mimeType: String, title: String): Boolean {
+        if (path.isEmpty()) return false
+        val source = File(path)
+        if (!source.exists() || source.length() <= 0L) return false
+        return try {
+            val file = fileForSharing(source)
+            val uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file,
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType.ifEmpty { "application/octet-stream" }
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                clipData = android.content.ClipData.newRawUri(title, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, title.ifEmpty { "分享" }).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(chooser)
+            true
+        } catch (e: Exception) {
+            Log.e("EAXShare", "shareFile failed: $path", e)
+            false
+        }
+    }
+
+    private fun fileForSharing(source: File): File {
+        val providerRoot = File(cacheDir, "share").apply { mkdirs() }
+        val direct = try {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", source)
+            source
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (direct != null) return direct
+
+        val pathKey = Integer.toHexString(source.absolutePath.hashCode())
+        val shareDir = File(providerRoot, pathKey).apply { mkdirs() }
+        val safeName = source.name
+            .replace(Regex("[\\\\/:*?\"<>|\\r\\n\\t]"), "_")
+            .ifBlank { "EAX分享.pdf" }
+        val target = File(shareDir, safeName)
+        if (target.exists() &&
+            target.length() == source.length() &&
+            target.lastModified() == source.lastModified()
+        ) {
+            return target
+        }
+
+        source.copyTo(target, overwrite = true)
+        target.setLastModified(source.lastModified())
+        return target
+    }
+
+    /**
+     * 给 PDF 加打开密码。PDFBox 在原生层跑，几百页也不会卡住界面。
+     */
+    private fun protectPdf(input: String, output: String, password: String): Boolean {
+        if (input.isEmpty() || output.isEmpty() || password.isEmpty()) return false
+        var document: PDDocument? = null
+        return try {
+            PDFBoxResourceLoader.init(applicationContext)
+            document = PDDocument.load(File(input))
+            val permission = AccessPermission()
+            val policy = StandardProtectionPolicy(password, password, permission)
+            policy.encryptionKeyLength = 256
+            document.protect(policy)
+            document.save(output)
+            true
+        } catch (e: Exception) {
+            File(output).delete()
+            false
+        } finally {
+            try {
+                document?.close()
+            } catch (e: Exception) {
+                // 关闭失败不影响已经写出的文件
+            }
         }
     }
 

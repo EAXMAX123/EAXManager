@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../app_info.dart';
 import '../../data/app_docs.dart';
+import '../../services/platform_service.dart';
 
 /// 交流群（群号可以长按复制）
 const List<String> _groupNumbers = ['1077681089', '279654219'];
@@ -292,6 +293,28 @@ class _AboutApp extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
+        _SectionTitle(title: '软件官网', icon: Icons.public_outlined),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          color: scheme.surfaceContainerLow,
+          child: ListTile(
+            leading: Icon(Icons.language_outlined, color: scheme.primary),
+            title: const Text('eaxsite.pages.dev'),
+            subtitle: const Text('更新公告与软件下载'),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () async {
+              final opened = await PlatformService.openUrl(
+                'https://eaxsite.pages.dev/',
+              );
+              if (!context.mounted || opened) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('打不开浏览器，请手动访问 eaxsite.pages.dev')),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 22),
         _SectionTitle(title: '交流群', icon: Icons.forum_outlined),
         const SizedBox(height: 8),
         Card(

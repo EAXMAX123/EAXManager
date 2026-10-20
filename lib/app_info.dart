@@ -23,11 +23,11 @@ class AppInfo {
   /// --dart-define=EAX_APP_VERSION=... 传自己的版本号，互不影响。
   static const String version = String.fromEnvironment(
     'EAX_APP_VERSION',
-    defaultValue: '1.7.2',
+    defaultValue: '1.7.6',
   );
   static const int buildNumber = int.fromEnvironment(
     'EAX_BUILD_NUMBER',
-    defaultValue: 40,
+    defaultValue: 44,
   );
 
   /// 更新信息地址：放「最新版本号是多少」的那个小文件
